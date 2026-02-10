@@ -1,5 +1,7 @@
 # Ventoy Easy Iso Manager (VEIM)
 
+![App Screenshot](screenshot.png)
+
 **VEIM** is a powerful, Python-based utility designed to streamline the management of Linux ISO files for your [Ventoy](https://www.ventoy.net/) bootable USB drive. It automates the tedious process of checking for updates, downloading the latest ISOs, and organizing them on your drive.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
