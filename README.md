@@ -72,7 +72,7 @@ VEIM currently supports the following families of distributions:
 3.  **Scan & Update**: 
     - Click **"Update All Catalogs"** to fetch the latest online versions for all supported distributions.
     - The list will update to show which versions are "Available" to install, update or download.
-4.  **Download**: Click **"Download"** next to any available update to fetch the new ISO directly into the `Managed_ISOs` folder. If the **Online Version** is a successor of **Local Version**, VEIM will automatically overwrite outdated ISO when you download an updated version of a Linux distribution that you're downloading.
+4.  **Download**: Click **"Download"** next to any available update to fetch the new ISO directly into the `Managed_ISOs` folder. If the **Online Version** is a successor of **Local Version**, VEIM will automatically overwrite outdated ISO when you download an updated version of a Linux distribution.
 
 ## 🤝 Contributing
 
