@@ -47,7 +47,7 @@ VEIM currently supports the following families of distributions:
 
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/your-username/vents-easy-iso-manager.git
+    git clone https://github.com/Cir0cuit/VEIM
     cd ventoy-easy-iso-manager
     ```
 
