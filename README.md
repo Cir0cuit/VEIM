@@ -71,7 +71,7 @@ VEIM currently supports the following families of distributions:
     - **Your other files are safe!** VEIM *only* touches files inside this `Managed_ISOs` folder. It will ignore your other ISOs, documents, and folders in the root directory, allowing you to freely use the drive for other purposes and your own ISOs.
 3.  **Scan & Update**: 
     - Click **"Update All Catalogs"** to fetch the latest online versions for all supported distributions.
-    - The list will update to show which versions are "Available" or "Installed".
+    - The list will update to show which versions are "Available" to install, update or download.
 4.  **Download**: Click **"Download"** next to any available update to fetch the new ISO directly into the `Managed_ISOs` folder.
 
 ## 🤝 Contributing
