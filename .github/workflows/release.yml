@@ -1,0 +1,143 @@
+name: Release
+
+# Tag a release and this builds every installer and publishes them:
+#
+#   git tag v2.2.0 && git push origin v2.2.0
+#
+# The tag must match __version__ in src/__init__.py; the build fails if it does
+# not, because the in-app update check compares against the release tag.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: resolve
+        shell: bash
+        run: |
+          declared=$(python -c "import re,io;print(re.search(r'__version__ = \"([^\"]+)\"', io.open('src/__init__.py').read()).group(1))")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tagged="${GITHUB_REF_NAME#v}"
+            if [ "$tagged" != "$declared" ]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match __version__ $declared"
+              exit 1
+            fi
+          fi
+          echo "version=$declared" >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+          # Oldest supported image, so the AppImage links against the oldest
+          # glibc and still runs on newer distributions.
+          - os: ubuntu-22.04
+            target: linux
+          - os: macos-15
+            target: macos-arm64
+          - os: macos-15-intel
+            target: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.22.3
+
+      - name: Build the bundle
+        run: pyinstaller --noconfirm --clean packaging/veim.spec
+
+      # --- Windows: an Inno Setup installer, plus a portable zip -----------
+      - name: Build the Windows installer
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          function Find-ISCC {
+            Get-ChildItem -Path "${env:ProgramFiles(x86)}", "${env:ProgramFiles}", "${env:LOCALAPPDATA}\Programs" `
+              -Filter ISCC.exe -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          $iscc = Find-ISCC
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            $iscc = Find-ISCC
+          }
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) was not found on this runner" }
+          Write-Host "Using $iscc"
+          & $iscc "/DAppVersion=${{ needs.version.outputs.version }}" packaging\windows\veim.iss
+          Compress-Archive -Path dist\VEIM\* `
+            -DestinationPath "dist\installer\VEIM-${{ needs.version.outputs.version }}-windows-portable.zip"
+
+      # --- Linux: an AppImage ----------------------------------------------
+      - name: Build the AppImage
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 desktop-file-utils
+          curl -fsSL -o /usr/local/bin/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /usr/local/bin/appimagetool
+          chmod +x packaging/linux/build-appimage.sh
+          packaging/linux/build-appimage.sh "${{ needs.version.outputs.version }}"
+          mkdir -p dist/installer
+          mv dist/*.AppImage dist/installer/
+
+      # --- macOS: a drag-to-Applications disk image ------------------------
+      - name: Build the disk image
+        if: startsWith(matrix.target, 'macos')
+        run: |
+          chmod +x packaging/macos/build-dmg.sh
+          arch=$([ "${{ matrix.target }}" = "macos-arm64" ] && echo arm64 || echo x86_64)
+          packaging/macos/build-dmg.sh "${{ needs.version.outputs.version }}" "$arch"
+          mkdir -p dist/installer
+          mv dist/*.dmg dist/installer/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: veim-${{ matrix.target }}
+          path: dist/installer/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: artifacts
+        run: sha256sum * >SHA256SUMS.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* \
+            --title "VEIM ${{ needs.version.outputs.version }}" \
+            --generate-notes

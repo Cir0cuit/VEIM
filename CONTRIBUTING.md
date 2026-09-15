@@ -1,0 +1,118 @@
+# Contributing
+
+```bash
+git clone https://github.com/Cir0cuit/VEIM
+cd VEIM
+pip install -e ".[dev]"
+
+pytest                  # 311 tests, no network and no display needed
+pytest -m network       # also resolve all 139 editions against live mirrors
+```
+
+The offline suite runs headless on Qt's `offscreen` platform, and is what CI
+runs on Linux, Windows and macOS across Python 3.10 and 3.12. Network tests are
+excluded by default — a mirror having a bad day should not fail your build. Run
+them when you suspect scraper rot: they fail with the distribution named.
+
+Work happens on `dev`. `main` is what gets tagged and released.
+
+## Layout
+
+```
+main.py                    entry point
+src/
+├── core/
+│   ├── paths.py           where the app may read from and write to
+│   ├── branding.py        VEIM's own icon, and the Windows taskbar identity
+│   ├── drive.py           cross-platform removable and Ventoy drive detection
+│   ├── downloader.py      resumable transfers, SHA-256, archives, rate metering
+│   ├── inventory.py       what is on the drive, reconciled against the filesystem
+│   ├── ventoy_config.py   ventoy.json alias management
+│   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError
+│   ├── icons.py           logo fetching, rasterising and High-DPI caching
+│   ├── app_update.py      whether a newer VEIM has been released
+│   └── logger.py
+├── recipes/               one module per distribution family
+│   └── registry.py        registration and the catalog taxonomy
+├── assets/branding/       VEIM's own mark, plus the few bundled distro logos
+└── ui/
+    ├── theme.py           palettes and the entire stylesheet
+    ├── components.py      shared widgets: rows, chips, flow layout, combo box
+    ├── sidebar.py         navigation and drive summary
+    ├── drive_picker.py    startup drive chooser
+    ├── dashboard.py       installed library and download orchestration
+    ├── catalog_view.py    browsable catalog
+    ├── update_banner.py   the "a new version is out" strip
+    ├── workspace.py       sidebar plus pages
+    └── app.py             root window
+packaging/                 PyInstaller spec and the per-OS installer recipes
+tests/                     pytest suite
+tools/                     development scripts
+docs/images/               screenshots the README embeds
+```
+
+Views never call `setStyleSheet` themselves. Every widget carries an
+`objectName` that the one generated stylesheet targets, so a new theme is a
+`ThemeColors` entry rather than a sweep through the UI.
+
+## Adding a distribution
+
+Subclass `DistroRecipe`, implement `get_flavors()` and `fetch_download_info()`,
+then register it in `src/recipes/registry.py` and add it to `CATEGORY_BY_KEY`
+there — registration fails loudly if the entry is missing.
+
+`fetch_download_info()` must `raise ScrapeError(self.name, reason)` when it
+cannot determine a current release. Never return a hardcoded URL as a fallback;
+the suite checks for it. Supply `sha256` when the project publishes one.
+
+Add an entry to `ICON_URLS` in `src/core/icons.py`, or the catalog draws a
+placeholder — a missing icon is otherwise silent.
+
+## Adding a theme
+
+Add a `ThemeColors` entry to `THEMES` in `src/ui/theme.py`. The theme menu and
+the stylesheet are both generated from it. The suite checks every palette for
+text contrast, for a readable button label, and for surfaces that would make a
+row invisible against its background.
+
+## Releasing
+
+Bump `__version__` in `src/__init__.py` and `version` in `pyproject.toml`, then:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+`.github/workflows/release.yml` builds on four runners and publishes the result
+to GitHub Releases:
+
+| Runner | Artifact |
+|---|---|
+| `windows-latest` | Inno Setup installer, plus a portable zip |
+| `ubuntu-22.04` | AppImage |
+| `macos-15` | Apple Silicon disk image |
+| `macos-15-intel` | Intel disk image |
+
+The tag has to match `__version__` or the workflow stops before building
+anything — the in-app update check compares the running version against the
+release tag, so a mismatch would either hide a release or advertise one forever.
+
+Everything starts from PyInstaller: `pyinstaller packaging/veim.spec` produces
+`dist/VEIM` (`dist/VEIM.app` on macOS), and the per-platform scripts under
+`packaging/` wrap that. Building locally needs
+[Inno Setup](https://jrsoftware.org/isdl.php) on Windows and `appimagetool` on
+Linux; macOS needs only what ships with the system.
+
+A frozen build runs from a read-only bundle, so nothing may write beside the
+executable. `src/core/paths.py` is the only place that decides where runtime
+files go, and a test fails if the spec stops bundling an asset the app reads.
+
+## Scripts
+
+| Script | Purpose |
+|---|---|
+| `tools/build_icons.py` | Renders `src/assets/branding/veim.svg` into the PNG, `.ico` and `.icns` files the app and the installers use. Run it after editing the SVG. |
+| `tools/capture_docs_screenshots.py` | Regenerates the images the README embeds, from a scripted drive. Refuses to save if the sidebar shows a real path instead of `K:\`. |
+| `tools/capture_ui_screenshots.py` | Renders the UI to `screenshots/` for local inspection. Not for documentation — the captures show a real path. |
+| `tools/audit_icons.py` | Compares each Wikimedia logo against Wikimedia's own rendering of the same file. Run it after adding an SVG: Qt renders a subset of SVG and fails silently on the rest, producing a wrong image rather than none. |

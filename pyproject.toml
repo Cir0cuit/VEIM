@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "veim"
+version = "1.0.0"
+description = "Ventoy Easy ISO Manager - manage Linux distributions and rescue tools on a Ventoy USB drive"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["ventoy", "iso", "linux", "usb", "bootable"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Boot",
+]
+dependencies = [
+    "PySide6>=6.6.0",
+    "requests>=2.28.0",
+    "beautifulsoup4>=4.11.0",
+    "Pillow>=9.0.0",
+    "packaging>=21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+]
+
+[project.gui-scripts]
+veim = "main:main"
+
+[project.urls]
+Homepage = "https://github.com/Cir0cuit/VEIM"
+Issues = "https://github.com/Cir0cuit/VEIM/issues"
+
+[tool.setuptools]
+packages = ["src", "src.core", "src.recipes", "src.ui"]
+py-modules = ["main"]
+
+[tool.setuptools.package-data]
+"src" = ["assets/icons/*", "assets/branding/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Network-dependent tests are opt-in: they hit live distro mirrors and are
+# therefore slow and flaky in CI. Run them with `pytest -m network`.
+addopts = "-m 'not network'"
+markers = [
+    "network: hits live distro mirrors (slow, excluded by default)",
+    "gui: requires a Qt display",
+    "slow: long-running sweep over every recipe and flavor",
+]

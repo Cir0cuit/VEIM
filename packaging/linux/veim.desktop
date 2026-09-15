@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=VEIM
+GenericName=Ventoy ISO Manager
+Comment=Keep the operating systems on your Ventoy USB drive up to date
+Exec=VEIM
+Icon=veim
+Terminal=false
+Categories=System;Utility;Archiving;
+Keywords=ventoy;iso;usb;linux;bootable;
+StartupNotify=true
+StartupWMClass=VEIM

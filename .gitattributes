@@ -1,0 +1,14 @@
+# A CRLF shebang makes a shell script unrunnable on Linux and macOS ("bad
+# interpreter"), and the release builds run these from a Windows checkout's
+# history. Normalise in the blob so the checkout platform cannot break them.
+* text=auto eol=lf
+
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.iss  text eol=crlf
+
+*.png  binary
+*.ico  binary
+*.icns binary
+*.gz   binary
