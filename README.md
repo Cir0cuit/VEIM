@@ -58,7 +58,10 @@ Nothing else to install.
 | **macOS** | `VEIM-x.y.z-macos-arm64.dmg` (Apple Silicon) or `-x86_64.dmg` (Intel). Open it and drag VEIM to Applications. |
 | **Linux** | `VEIM-x.y.z-x86_64.AppImage` — `chmod +x` it once and double-click. No packages, no dependencies. |
 
-The app tells you when a new version is out and links you to it.
+The app tells you when a new version is out and links you to it. The version
+it is running is at the bottom of the sidebar, with a **Check for Updates**
+button beside it — that one is about VEIM itself, and is separate from **Check
+All Updates**, which is about the ISOs on your drive.
 
 <details>
 <summary>The first launch warns that the app is unidentified</summary>

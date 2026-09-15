@@ -351,20 +351,39 @@ class CapacityBar(QWidget):
         self._fill.setGeometry(0, 0, int(self.width() * self._ratio), self.height())
 
 
+BUTTON_OBJECT_NAMES = {
+    "primary": "primaryBtn", "ghost": "ghostBtn", "danger": "quietDanger",
+}
+
+
 def make_button(text: str, kind: str = "ghost", on_click: Optional[Callable] = None,
                 parent=None) -> QPushButton:
     """Create a themed button.
 
     kind: "primary" | "ghost" | "danger"
     """
-    names = {"primary": "primaryBtn", "ghost": "ghostBtn", "danger": "quietDanger"}
     btn = QPushButton(text, parent)
-    btn.setObjectName(names.get(kind, "ghostBtn"))
+    btn.setObjectName(BUTTON_OBJECT_NAMES.get(kind, "ghostBtn"))
     btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
     btn.setMinimumHeight(34)
     if on_click:
         btn.clicked.connect(on_click)
     return btn
+
+
+def set_button_kind(btn: QPushButton, kind: str):
+    """Restyle a button that already exists.
+
+    Re-polishing is the part that matters: a widget the stylesheet has already
+    seen keeps its old appearance until the style is told to look at the new
+    objectName.
+    """
+    name = BUTTON_OBJECT_NAMES.get(kind, "ghostBtn")
+    if btn.objectName() == name:
+        return
+    btn.setObjectName(name)
+    btn.style().unpolish(btn)
+    btn.style().polish(btn)
 
 
 class EmptyState(QFrame):

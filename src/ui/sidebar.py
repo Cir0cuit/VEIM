@@ -13,12 +13,13 @@ from PySide6.QtCore import Qt, Signal
 
 from src.ui.components import CapacityBar, ElidingLabel, make_button
 from src.ui.theme import theme_manager, ThemeButton
+from src.ui.version_panel import VersionPanel
 
 SIDEBAR_WIDTH = 232
 
 
 class Sidebar(QWidget):
-    """Brand, section navigation, and the active-drive summary."""
+    """Brand, section navigation, the active-drive summary, and the version."""
 
     navigated = Signal(str)      # page key
     change_drive = Signal()
@@ -98,6 +99,14 @@ class Sidebar(QWidget):
         theme_row.addWidget(self.theme_btn)
         theme_row.addStretch()
         root.addLayout(theme_row)
+
+        # --- The app itself ----------------------------------------------
+        # Below the drive, not beside it: what VEIM is running is a different
+        # question from what is on the stick, and the Installed page owns the
+        # second one.
+        root.addSpacing(18)
+        self.version = VersionPanel()
+        root.addWidget(self.version)
 
     # -- public API -------------------------------------------------------
 

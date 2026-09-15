@@ -2,6 +2,12 @@
 
 Checks the GitHub Releases API, not a branch: what people install comes from a
 release, so that is what a version comparison has to be against.
+
+Two entry points. check() is the quiet one the startup banner uses: throttled
+to once a day, and None whether there is nothing new or GitHub never answered,
+because a banner has nothing to say in either case. check_now() is for someone
+who pressed a button, and it distinguishes those two outcomes - telling a user
+with no connection that they are up to date would be a lie.
 """
 import json
 import os
@@ -23,12 +29,32 @@ RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 CHECK_INTERVAL = 24 * 3600
 STATE_FILE = "update_check.json"
 
+# What a check found.
+UPDATE_AVAILABLE = "update"
+UP_TO_DATE = "current"
+UNREACHABLE = "unreachable"
+
 
 @dataclass(frozen=True)
 class Release:
     version: str
     url: str
     notes: str
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    """One check's outcome, including the case a bare Release cannot express:
+    the answer never arrived. `release` is set only when what GitHub published
+    is newer than the running build."""
+    state: str
+    latest: str = ""
+    release: Optional[Release] = None
+    error: str = ""
+
+    @property
+    def update_available(self) -> bool:
+        return self.release is not None
 
 
 def _read_state() -> dict:
@@ -55,6 +81,38 @@ def _newer(candidate: str, installed: str) -> bool:
         return False
 
 
+def _fetch(installed: str) -> CheckResult:
+    """Ask GitHub what the latest release is and record the answer."""
+    try:
+        response = requests.get(
+            LATEST_API,
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": f"veim/{installed}"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception as e:
+        log.debug(f"Update check could not reach GitHub: {e}")
+        return CheckResult(UNREACHABLE, error=str(e))
+
+    tag = str(payload.get("tag_name", "")).lstrip("vV")
+    url = payload.get("html_url") or RELEASES_PAGE
+    notes = (payload.get("body") or "").strip()
+
+    state = _read_state()
+    state["last_check"] = time.time()
+    state["pending"] = {"version": tag, "url": url, "notes": notes[:2000]}
+    _write_state(state)
+
+    if not _newer(tag, installed):
+        return CheckResult(UP_TO_DATE, latest=tag)
+
+    log.info(f"VEIM {tag} is available (running {installed})")
+    return CheckResult(UPDATE_AVAILABLE, latest=tag,
+                       release=Release(tag, url, notes))
+
+
 def check(installed: str = __version__, force: bool = False) -> Optional[Release]:
     """The published release when it is newer than this build, else None.
 
@@ -72,29 +130,13 @@ def check(installed: str = __version__, force: bool = False) -> Optional[Release
                            pending.get("notes", ""))
         return None
 
-    try:
-        response = requests.get(
-            LATEST_API,
-            headers={"Accept": "application/vnd.github+json",
-                     "User-Agent": f"veim/{installed}"},
-            timeout=10,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except Exception as e:
-        log.debug(f"Update check could not reach GitHub: {e}")
-        return None
+    return _fetch(installed).release
 
-    tag = str(payload.get("tag_name", "")).lstrip("vV")
-    url = payload.get("html_url") or RELEASES_PAGE
-    notes = (payload.get("body") or "").strip()
 
-    state["last_check"] = time.time()
-    state["pending"] = {"version": tag, "url": url, "notes": notes[:2000]}
-    _write_state(state)
+def check_now(installed: str = __version__) -> CheckResult:
+    """A check somebody asked for, so it always goes to the network.
 
-    if not _newer(tag, installed):
-        return None
-
-    log.info(f"VEIM {tag} is available (running {installed})")
-    return Release(tag, url, notes)
+    Answering a button press with yesterday's cached result would make the
+    button look broken the one time it matters.
+    """
+    return _fetch(installed)

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor
 
+from src import __version__
 from src.core.drive import DriveInfo, DriveDetector
 from src.core.logger import log
 from src.ui.components import CapacityBar, Pill, make_button, EmptyState, elide
@@ -172,6 +173,11 @@ class DrivePickerView(QWidget):
         actions.addWidget(make_button("Refresh", "ghost", self.refresh))
         actions.addWidget(make_button("Browse Folder…", "ghost", self._browse))
         actions.addStretch()
+        # The sidebar carries the version once a drive is chosen; this screen
+        # comes first, so it says so itself.
+        version = QLabel(f"VEIM {__version__}")
+        version.setObjectName("rowMeta")
+        actions.addWidget(version, 0, Qt.AlignmentFlag.AlignVCenter)
         column.addLayout(actions)
 
         centre.addWidget(holder, 0)
