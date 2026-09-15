@@ -16,7 +16,8 @@ from src.core.app_update import Release
 from src.ui import update_prompt as up
 from src.ui.update_prompt import UpdateNotifier, UpdatePrompt
 
-RELEASE = Release("2.0.0", "https://example.invalid/releases/v2.0.0", "What changed.")
+RELEASE = Release("2.0.0", "https://example.invalid/releases/v2.0.0",
+                  "Fix the drive scan\n\nSquashed commit messages nobody asked for.")
 
 
 @pytest.fixture
@@ -45,11 +46,13 @@ def test_it_names_the_release_and_the_running_build(prompt):
     assert any(__version__ in text for text in texts)
 
 
-def test_long_release_notes_are_trimmed(qtbot, state_file):
-    dialog = UpdatePrompt(Release("2.0.0", "https://example.invalid", "x" * 5000))
-    qtbot.addWidget(dialog)
+def test_it_summarises_rather_than_reciting_the_commit_log(prompt):
+    """GitHub's notes are commit messages, written for whoever reads the diff -
+    not for somebody deciding whether to install this."""
+    texts = [label.text() for label in prompt.findChildren(up.QLabel)]
 
-    assert len(dialog.lbl_notes.text()) <= up.NOTES_LIMIT + 1
+    assert up.SUMMARY in texts
+    assert not any("Squashed commit messages" in text for text in texts)
 
 
 # ------------------------------------------------------------------- answering

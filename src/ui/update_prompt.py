@@ -19,9 +19,11 @@ from src import __version__
 from src.core import app_update
 from src.ui.components import make_button
 
-# Release notes are a courtesy here, not the page: enough to see what changed,
-# and the download page has the rest.
-NOTES_LIMIT = 420
+# What the dialog says a release contains. Deliberately fixed text: the notes
+# GitHub carries are the commit messages, which are written for whoever is
+# reading the diff, not for somebody being asked whether to install this. The
+# release page has them for anyone who wants them.
+SUMMARY = "This update delivers new improvements and bug fixes."
 
 
 class UpdatePrompt(QDialog):
@@ -47,16 +49,12 @@ class UpdatePrompt(QDialog):
         subtitle.setObjectName("pageSubtitle")
         root.addWidget(subtitle)
 
-        notes = (release.notes or "").strip()
-        if notes:
-            if len(notes) > NOTES_LIMIT:
-                notes = notes[:NOTES_LIMIT].rstrip() + "…"
-            self.lbl_notes = QLabel(notes)
-            self.lbl_notes.setObjectName("rowDesc")
-            self.lbl_notes.setWordWrap(True)
-            self.lbl_notes.setTextFormat(Qt.TextFormat.PlainText)
-            root.addSpacing(10)
-            root.addWidget(self.lbl_notes)
+        self.lbl_summary = QLabel(SUMMARY)
+        self.lbl_summary.setObjectName("rowDesc")
+        self.lbl_summary.setWordWrap(True)
+        self.lbl_summary.setTextFormat(Qt.TextFormat.PlainText)
+        root.addSpacing(12)
+        root.addWidget(self.lbl_summary)
 
         root.addSpacing(20)
 
