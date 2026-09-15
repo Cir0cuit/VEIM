@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt
 from src.ui.theme import theme_manager, generate_stylesheet, ThemeColors
 from src.ui.drive_picker import DrivePickerView
 from src.ui.workspace import Workspace
-from src.ui.update_banner import UpdateBanner
+from src.ui.update_prompt import UpdateNotifier
 from src.core.icons import icon_manager
 from src.core.logger import log
 
@@ -27,9 +27,11 @@ class VEIMMainWindow(QMainWindow):
         self.central_layout.setSpacing(0)
         self.setCentralWidget(self.central_container)
 
-        self.update_banner = UpdateBanner()
-        self.central_layout.addWidget(self.update_banner)
-        self.update_banner.check_in_background()
+        # The automatic check raises a dialog rather than a strip across the
+        # top: every button on it is an answer, including the two that stop it
+        # coming back.
+        self.update_notifier = UpdateNotifier(self)
+        self.update_notifier.check_in_background()
 
         self.current_view: Optional[QWidget] = None
         self.active_drive_path: str = ""

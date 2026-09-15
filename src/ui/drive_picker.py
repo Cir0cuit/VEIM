@@ -18,6 +18,7 @@ from src.core.drive import DriveInfo, DriveDetector
 from src.core.logger import log
 from src.ui.components import CapacityBar, Pill, make_button, EmptyState, elide
 from src.ui.theme import theme_manager, ThemeButton
+from src.ui.update_button import UpdateCheckButton
 
 
 class DriveCard(QFrame):
@@ -111,10 +112,14 @@ class DrivePickerView(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Theme control pinned top-right.
+        # App-level controls pinned top-right: the two things on this screen
+        # that are about VEIM rather than about a drive.
         topbar = QHBoxLayout()
         topbar.setContentsMargins(20, 16, 20, 0)
+        topbar.setSpacing(10)
         topbar.addStretch()
+        self.btn_update = UpdateCheckButton()
+        topbar.addWidget(self.btn_update)
         topbar.addWidget(ThemeButton())
         root.addLayout(topbar)
 
@@ -131,10 +136,17 @@ class DrivePickerView(QWidget):
         holder.setMinimumWidth(520)
         holder.setLayout(column)
 
+        brand_row = QHBoxLayout()
+        brand_row.setSpacing(7)
+        brand_row.addStretch()
         brand = QLabel("VEIM")
         brand.setObjectName("brandMark")
-        brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        column.addWidget(brand)
+        brand_row.addWidget(brand, 0, Qt.AlignmentFlag.AlignBottom)
+        version = QLabel(f"v{__version__}")
+        version.setObjectName("brandVersion")
+        brand_row.addWidget(version, 0, Qt.AlignmentFlag.AlignBottom)
+        brand_row.addStretch()
+        column.addLayout(brand_row)
 
         title = QLabel("Choose a Ventoy drive")
         title.setObjectName("pageTitle")
@@ -173,11 +185,6 @@ class DrivePickerView(QWidget):
         actions.addWidget(make_button("Refresh", "ghost", self.refresh))
         actions.addWidget(make_button("Browse Folder…", "ghost", self._browse))
         actions.addStretch()
-        # The sidebar carries the version once a drive is chosen; this screen
-        # comes first, so it says so itself.
-        version = QLabel(f"VEIM {__version__}")
-        version.setObjectName("rowMeta")
-        actions.addWidget(version, 0, Qt.AlignmentFlag.AlignVCenter)
         column.addLayout(actions)
 
         centre.addWidget(holder, 0)

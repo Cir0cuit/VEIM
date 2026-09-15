@@ -1,28 +1,26 @@
-"""What version of VEIM this is, and whether a newer one exists.
+"""The button that asks whether a newer VEIM has been released.
 
-Kept deliberately apart from "Check All Updates" on the Installed page. That
-button asks fifty distribution mirrors what they have published and rewrites
-the rows on the drive; this one asks GitHub about VEIM itself and can only
-ever send you to a download page. They sit in different places, are worded
-differently, and share no state - so pressing one never looks like it might
-have done the other.
+It lives on the drive picker, where the app itself is what you are looking at
+anyway - not in the workspace, where every other control is about the drive
+and its ISOs. "Check All Updates" on the Installed page is the other question
+entirely: fifty mirrors, and files that get rewritten on the stick.
 
-The button is the whole status display: it offers a check, says it is running
+The button is its own status display. It offers the check, says it is running
 one, and then reports what came back. "No updates found" and "Check failed"
-are different answers on purpose, which is why this uses app_update.check_now()
-rather than the banner's check().
+are different answers on purpose, which is why this uses check_now() rather
+than the automatic check().
 """
 import threading
 import webbrowser
 
-from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QPushButton
 
-from src import __version__
 from src.core import app_update
-from src.ui.components import make_button, set_button_kind
+from src.ui.components import set_button_kind
 
-CHECK_TEXT = "Check for Updates"
+CHECK_TEXT = "Check for VEIM Updates"
 BUSY_TEXT = "Checking…"
 CURRENT_TEXT = "No updates found"
 FAILED_TEXT = "Check failed"
@@ -32,7 +30,7 @@ TOOLTIP = ("Checks GitHub for a newer version of VEIM itself.\n"
 
 # How long a finished check keeps showing its answer before the button goes
 # back to offering another one. Long enough to read, short enough that the
-# panel is never left stating something that stopped being true.
+# button is never left stating something that stopped being true.
 RESULT_LINGER_MS = 8000
 
 
@@ -41,37 +39,25 @@ class _Bridge(QObject):
     checked = Signal(object)        # app_update.CheckResult
 
 
-class VersionPanel(QWidget):
-    """Version readout plus its own update check."""
+class UpdateCheckButton(QPushButton):
+    """Checks for a newer VEIM, and reports the answer in its own label."""
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("versionPanel")
+        super().__init__(CHECK_TEXT, parent)
+        self.setObjectName("ghostBtn")
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setMinimumHeight(34)
+        self.setToolTip(TOOLTIP)
+        self.clicked.connect(self._on_click)
 
         self._url = app_update.RELEASES_PAGE
         self._state = ""
         self._checking = False
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(6)
-
-        heading = QLabel("VEIM")
-        heading.setObjectName("navSection")
-        root.addWidget(heading)
-
-        self.lbl_version = QLabel(f"Version {__version__}")
-        self.lbl_version.setObjectName("rowMeta")
-        root.addWidget(self.lbl_version)
-
-        self.btn = make_button(CHECK_TEXT, "ghost", self._on_click)
-        self.btn.setToolTip(TOOLTIP)
-        root.addWidget(self.btn)
-
         self._bridge = _Bridge()
         self._bridge.checked.connect(self._report)
 
-        # Owned by the panel rather than a bare QTimer.singleShot: closing the
+        # Owned by the button rather than a bare QTimer.singleShot: closing the
         # window inside the linger would otherwise fire this at a widget whose
         # C++ half is already gone.
         self._linger = QTimer(self)
@@ -91,7 +77,7 @@ class VersionPanel(QWidget):
         if self._checking:
             return
         self._checking = True
-        self._set_button(BUSY_TEXT, "ghost", enabled=False)
+        self._set_state(BUSY_TEXT, "ghost", enabled=False)
 
         def _worker():
             result = app_update.check_now()
@@ -112,17 +98,16 @@ class VersionPanel(QWidget):
 
         if result.update_available:
             self._url = result.release.url
-            self.lbl_version.setText(f"Version {__version__} · {result.latest} is out")
-            self.btn.setToolTip(f"Opens the VEIM {result.latest} download page.")
-            self._set_button(f"Download {result.latest}", "primary")
+            self.setToolTip(f"Opens the VEIM {result.latest} download page.")
+            self._set_state(f"Download {result.latest}", "primary")
             # No linger: an available release stays on offer until it is taken.
             return
 
         if result.state == app_update.UP_TO_DATE:
-            self._set_button(CURRENT_TEXT, "ghost", enabled=False)
+            self._set_state(CURRENT_TEXT, "ghost", enabled=False)
         else:
-            self.btn.setToolTip(f"Could not reach GitHub.\n{result.error}".strip())
-            self._set_button(FAILED_TEXT, "ghost", enabled=False)
+            self.setToolTip(f"Could not reach GitHub.\n{result.error}".strip())
+            self._set_state(FAILED_TEXT, "ghost", enabled=False)
 
         self._linger.start(RESULT_LINGER_MS)
 
@@ -131,10 +116,10 @@ class VersionPanel(QWidget):
         if self._checking or self._state == app_update.UPDATE_AVAILABLE:
             return
         self._state = ""
-        self.btn.setToolTip(TOOLTIP)
-        self._set_button(CHECK_TEXT, "ghost")
+        self.setToolTip(TOOLTIP)
+        self._set_state(CHECK_TEXT, "ghost")
 
-    def _set_button(self, text: str, kind: str, enabled: bool = True):
-        self.btn.setText(text)
-        self.btn.setEnabled(enabled)
-        set_button_kind(self.btn, kind)
+    def _set_state(self, text: str, kind: str, enabled: bool = True):
+        self.setText(text)
+        self.setEnabled(enabled)
+        set_button_kind(self, kind)

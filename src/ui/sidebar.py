@@ -11,15 +11,15 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
+from src import __version__
 from src.ui.components import CapacityBar, ElidingLabel, make_button
 from src.ui.theme import theme_manager, ThemeButton
-from src.ui.version_panel import VersionPanel
 
 SIDEBAR_WIDTH = 232
 
 
 class Sidebar(QWidget):
-    """Brand, section navigation, the active-drive summary, and the version."""
+    """Brand and version, section navigation, and the active-drive summary."""
 
     navigated = Signal(str)      # page key
     change_drive = Signal()
@@ -34,9 +34,21 @@ class Sidebar(QWidget):
         root.setSpacing(0)
 
         # --- Brand -------------------------------------------------------
+        # The version rides the wordmark: it is the app's own name tag, and
+        # belongs nowhere near the drive controls below.
+        brand_row = QHBoxLayout()
+        brand_row.setContentsMargins(0, 0, 0, 0)
+        brand_row.setSpacing(7)
+
         brand = QLabel("VEIM")
         brand.setObjectName("brandMark")
-        root.addWidget(brand)
+        brand_row.addWidget(brand, 0, Qt.AlignmentFlag.AlignBottom)
+
+        self.lbl_version = QLabel(f"v{__version__}")
+        self.lbl_version.setObjectName("brandVersion")
+        brand_row.addWidget(self.lbl_version, 0, Qt.AlignmentFlag.AlignBottom)
+        brand_row.addStretch()
+        root.addLayout(brand_row)
 
         sub = QLabel("Ventoy Easy ISO Manager")
         sub.setObjectName("brandSub")
@@ -99,14 +111,6 @@ class Sidebar(QWidget):
         theme_row.addWidget(self.theme_btn)
         theme_row.addStretch()
         root.addLayout(theme_row)
-
-        # --- The app itself ----------------------------------------------
-        # Below the drive, not beside it: what VEIM is running is a different
-        # question from what is on the stick, and the Installed page owns the
-        # second one.
-        root.addSpacing(18)
-        self.version = VersionPanel()
-        root.addWidget(self.version)
 
     # -- public API -------------------------------------------------------
 

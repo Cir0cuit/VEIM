@@ -5,7 +5,7 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 429 tests, no network and no display needed
+pytest                  # 443 tests, no network and no display needed
 pytest -m network       # also resolve all 139 editions against live mirrors
 ```
 
@@ -42,8 +42,8 @@ src/
     ├── drive_picker.py    startup drive chooser
     ├── dashboard.py       installed library and download orchestration
     ├── catalog_view.py    browsable catalog
-    ├── update_banner.py   the "a new version is out" strip
-    ├── version_panel.py   the version, and the check for a newer VEIM
+    ├── update_prompt.py   the automatic check, and the dialog it raises
+    ├── update_button.py   the drive picker's "Check for VEIM Updates"
     ├── workspace.py       sidebar plus pages
     └── app.py             root window
 packaging/                 PyInstaller spec and the per-OS installer recipes

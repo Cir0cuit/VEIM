@@ -452,6 +452,12 @@ def _component_stylesheet(c: ThemeColors) -> str:
         font-weight: 800;
         letter-spacing: 1px;
     }}
+    QLabel#brandVersion {{
+        color: {c.text_muted};
+        font-size: 11px;
+        font-weight: 700;
+        padding-bottom: 2px;
+    }}
     QLabel#brandSub {{
         color: {c.text_muted};
         font-size: 11px;

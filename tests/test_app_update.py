@@ -155,3 +155,43 @@ def test_a_manual_check_feeds_the_throttled_one(state_file, monkeypatch):
                         lambda *a, **k: pytest.fail("should have used the stored result"))
 
     assert app_update.check(installed="1.0.1").version == "2.0.0"
+
+
+# ------------------------------------------------------- answers that stick
+
+def test_a_skipped_version_is_muted(state_file):
+    app_update.skip_version("2.0.0")
+
+    assert app_update.is_muted("2.0.0")
+    assert not app_update.is_muted("2.0.1"), "a newer release is a new question"
+
+
+def test_skipping_also_covers_what_that_release_overtook(state_file):
+    """A release can be withdrawn; being offered its predecessor after
+    refusing it is not a new question."""
+    app_update.skip_version("2.0.0")
+
+    assert app_update.is_muted("1.5.0")
+
+
+def test_snoozing_mutes_everything_for_a_week(state_file, monkeypatch):
+    app_update.snooze()
+    assert app_update.is_muted("9.9.9")
+
+    later = time.time() + app_update.SNOOZE_DURATION + 1
+    monkeypatch.setattr(app_update.time, "time", lambda: later)
+    assert not app_update.is_muted("9.9.9")
+
+
+def test_nothing_is_muted_to_begin_with(state_file):
+    assert not app_update.is_muted("2.0.0")
+
+
+def test_an_answer_survives_the_next_check(state_file, monkeypatch):
+    """The check writes the same file; it must not wipe the reply."""
+    app_update.skip_version("2.0.0")
+    serve(monkeypatch, {"tag_name": "v2.0.0", "html_url": "https://example.invalid"})
+
+    app_update.check_now(installed="1.0.1")
+
+    assert app_update.is_muted("2.0.0")

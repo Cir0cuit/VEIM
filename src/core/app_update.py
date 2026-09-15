@@ -8,6 +8,11 @@ to once a day, and None whether there is nothing new or GitHub never answered,
 because a banner has nothing to say in either case. check_now() is for someone
 who pressed a button, and it distinguishes those two outcomes - telling a user
 with no connection that they are up to date would be a lie.
+
+An answer of "no thanks" is remembered: skip_version() retires one release for
+good and snooze() stops the asking for a week. Both are read by is_muted(),
+which only the automatic check consults - somebody who presses the button is
+asking, and gets an answer whatever they refused before.
 """
 import json
 import os
@@ -27,6 +32,7 @@ LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 
 CHECK_INTERVAL = 24 * 3600
+SNOOZE_DURATION = 7 * 24 * 3600
 STATE_FILE = "update_check.json"
 
 # What a check found.
@@ -140,3 +146,33 @@ def check_now(installed: str = __version__) -> CheckResult:
     button look broken the one time it matters.
     """
     return _fetch(installed)
+
+
+def skip_version(version: str) -> None:
+    """Never raise this release again. A later one still gets through."""
+    state = _read_state()
+    state["skipped_version"] = version
+    _write_state(state)
+    log.info(f"VEIM {version} skipped; a newer release will still be offered")
+
+
+def snooze(duration: float = SNOOZE_DURATION) -> None:
+    """Stop asking for a while, whatever gets published in the meantime."""
+    state = _read_state()
+    state["snoozed_until"] = time.time() + duration
+    _write_state(state)
+
+
+def is_muted(version: str) -> bool:
+    """Whether the user has already refused to hear about this release.
+
+    Only the automatic check asks. A prompt that cannot be turned off is worse
+    than no prompt, and a button that ignores the user is worse still - so
+    check_now() never consults this.
+    """
+    state = _read_state()
+    skipped = state.get("skipped_version", "")
+    if skipped and not _newer(version, skipped):
+        # This release, or one it has already overtaken, was refused.
+        return True
+    return time.time() < state.get("snoozed_until", 0)
