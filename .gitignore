@@ -18,16 +18,10 @@ veim.log
 # committed; this is the scratch directory the capture tool writes to.
 screenshots/
 
-# Downloaded brand assets are re-fetched on first run; keeping them out of git
-# avoids committing third-party logos.
-src/assets/icons/*.png
-src/assets/icons/*.svg
-# chevron_down is our own UI chrome, not a downloaded logo: the stylesheet
-# points QComboBox's arrow at it and nothing ever fetches it, so a clone
-# without it renders every dropdown with no arrow.
-!src/assets/icons/chevron_down.png
-!src/assets/icons/chevron_down.svg
-# Marker recording the icon cache format; regenerated at runtime.
+# The rendered distribution logos in src/assets/icons/ are committed, so a
+# fresh install shows every row's icon before any network call. Regenerate them
+# with tools/fetch_icons.py.
+# This marker is runtime state, written next to a user's own icon cache.
 src/assets/icons/.cache_format
 
 # Local knowledge-graph output

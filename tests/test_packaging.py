@@ -62,11 +62,58 @@ def test_app_icon_loads(qapp):
 # --- what the frozen build has to carry ------------------------------------
 
 def test_spec_bundles_the_assets_the_app_reads_at_runtime():
-    """A missing chevron leaves every dropdown with no arrow, silently."""
+    """A missing chevron leaves every dropdown with no arrow, silently, and
+    missing logos leave every catalog row waiting on a network fetch."""
     spec = read(PACKAGING, "veim.spec")
-    assert "chevron_down.png" in spec
-    assert "chevron_down.svg" in spec
+    assert '"assets", "icons"' in spec
     assert "branding" in spec
+
+
+def test_every_distribution_ships_a_logo():
+    """Fetching these on first run left rows blank until fifty requests
+    finished, and blank for good without a network."""
+    from src.core.icons import ICON_URLS
+    from src.recipes.registry import registry
+
+    icon_dir = os.path.join(ROOT, "src", "assets", "icons")
+    for recipe in registry.get_all_recipes():
+        assert recipe.key in ICON_URLS, f"{recipe.name} has no ICON_URLS entry"
+        path = os.path.join(icon_dir, f"{recipe.key}.png")
+        assert os.path.exists(path), \
+            f"{recipe.name}: run tools/fetch_icons.py and commit {recipe.key}.png"
+
+
+@pytest.mark.parametrize("name", sorted(
+    f for f in os.listdir(os.path.join(ROOT, "src", "assets", "icons"))
+    if f.endswith(".png") and not f.startswith("chevron")))
+def test_shipped_logo_is_not_blank(name):
+    """Qt renders a subset of SVG and fails silently on the rest, writing a
+    transparent image rather than none."""
+    from PIL import Image
+
+    with Image.open(os.path.join(ROOT, "src", "assets", "icons", name)) as image:
+        rgba = image.convert("RGBA")
+        width, height = rgba.size
+        opaque = sum(1 for pixel in rgba.getdata() if pixel[3] > 8)
+
+    assert width >= 32 and height >= 32, f"{name} is {width}x{height}"
+    assert opaque > width * height * 0.01, f"{name} rendered blank"
+
+
+def test_logos_resolve_without_a_writable_cache(tmp_path, qapp):
+    """The frozen app's cache directory starts empty; the shipped set has to
+    carry it until, and if, anything is ever downloaded."""
+    from src.core.icons import IconManager
+    from src.recipes.registry import registry
+
+    manager = IconManager()
+    manager.cache_dir = str(tmp_path)          # a fresh install's empty cache
+    manager.pixmap_cache.clear()
+
+    for recipe in registry.get_all_recipes():
+        assert manager._icon_path(recipe.key), f"no logo resolves for {recipe.name}"
+        assert manager.get_pixmap(recipe.key) is not None, \
+            f"{recipe.name} renders no pixmap"
 
 
 def test_spec_excludes_are_not_imported_anywhere():

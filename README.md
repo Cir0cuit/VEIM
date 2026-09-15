@@ -194,6 +194,7 @@ built.
 
 MIT — see [LICENSE](LICENSE).
 
-Distribution names and logos are trademarks of their respective projects,
-included to identify them. Most are fetched at runtime rather than committed;
-the exceptions are listed in [`src/assets/branding/`](src/assets/branding/).
+Distribution names and logos are trademarks of their respective projects, and
+are included here solely to identify them. The rendered logos live in
+[`src/assets/icons/`](src/assets/icons/); if you fork and redistribute VEIM,
+check each project's own trademark policy.

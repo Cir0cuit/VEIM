@@ -14,11 +14,10 @@ BRANDING = os.path.join(ROOT, "src", "assets", "branding")
 
 datas = [
     (BRANDING, os.path.join("src", "assets", "branding")),
-    # UI chrome, not a downloaded logo: the stylesheet points QComboBox's arrow
-    # at this file, and a build without it renders every dropdown with no arrow.
-    (os.path.join(ROOT, "src", "assets", "icons", "chevron_down.png"),
-     os.path.join("src", "assets", "icons")),
-    (os.path.join(ROOT, "src", "assets", "icons", "chevron_down.svg"),
+    # The distribution logos and the dropdown chevron. Without the chevron the
+    # stylesheet draws every QComboBox with no arrow; without the logos every
+    # catalog row waits on a network fetch that may never succeed.
+    (os.path.join(ROOT, "src", "assets", "icons"),
      os.path.join("src", "assets", "icons")),
 ]
 

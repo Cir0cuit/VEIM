@@ -96,8 +96,12 @@ RENDER_PX = 512
 # Logos that ship with the app because no fetchable mark-only file exists.
 # They live outside the icon cache so the cache stays disposable.
 BUNDLED_PREFIX = "bundled:"
-BRANDING_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "branding")
+BRANDING_DIR = os.path.join(paths.resource_dir(), "src", "assets", "branding")
+
+# Every logo is rendered ahead of time and ships with the app. Fetching them on
+# first run left rows blank until fifty sequential requests had finished, and
+# blank for good on a machine behind a proxy or with no network at all.
+BUNDLED_ICON_DIR = os.path.join(paths.resource_dir(), "src", "assets", "icons")
 
 
 def _trim_transparent(img: "Image.Image") -> "Image.Image":
@@ -113,6 +117,24 @@ class IconManager:
         self._backdrop_cache: Dict[str, bool] = {}
         self.listeners: list[Callable[[str], None]] = []
         self._migrate_cache()
+
+    def _icon_path(self, key: str) -> Optional[str]:
+        """A downloaded refresh wins; otherwise the copy that ships with the app."""
+        for directory in (self.cache_dir, BUNDLED_ICON_DIR):
+            path = os.path.join(directory, f"{key}.png")
+            if os.path.exists(path):
+                return path
+        return None
+
+    def available_keys(self) -> set:
+        keys = set(ICON_URLS)
+        for directory in (self.cache_dir, BUNDLED_ICON_DIR):
+            try:
+                keys.update(fn[:-4] for fn in os.listdir(directory)
+                            if fn.endswith(".png") and not fn.startswith("chevron"))
+            except OSError:
+                pass
+        return keys
 
     def _migrate_cache(self):
         """Re-crop icons written before CACHE_FORMAT 2, which had padding baked in."""
@@ -144,14 +166,9 @@ class IconManager:
 
     def preload_all(self, sizes=(56, 48, 64), dpr: float = 2.0):
         """Pre-render and cache high-resolution, High-DPI QPixmaps for all cached icons."""
-        keys = set(ICON_URLS.keys())
-        if os.path.exists(self.cache_dir):
-            for fn in os.listdir(self.cache_dir):
-                if fn.endswith(".png"):
-                    keys.add(fn[:-4])
-        for key in keys:
-            cache_file = os.path.join(self.cache_dir, f"{key}.png")
-            if os.path.exists(cache_file):
+        for key in self.available_keys():
+            cache_file = self._icon_path(key)
+            if cache_file:
                 try:
                     pix = QPixmap(cache_file)
                     if not pix.isNull():
@@ -173,8 +190,8 @@ class IconManager:
         if cache_key in self.pixmap_cache:
             return self.pixmap_cache[cache_key]
 
-        cache_file = os.path.join(self.cache_dir, f"{k}.png")
-        if os.path.exists(cache_file):
+        cache_file = self._icon_path(k)
+        if cache_file:
             try:
                 pix = QPixmap(cache_file)
                 if not pix.isNull():
@@ -205,8 +222,8 @@ class IconManager:
             return self._backdrop_cache[k]
 
         needs = False
-        path = os.path.join(self.cache_dir, f"{k}.png")
-        if os.path.exists(path):
+        path = self._icon_path(k)
+        if path:
             try:
                 with Image.open(path) as im:
                     # A thumbnail is enough to judge overall darkness.
@@ -232,16 +249,16 @@ class IconManager:
         return QIcon(pix) if pix else None
 
     def start_background_download(self):
-        """Asynchronously download any missing icons in the background."""
+        """Fetch anything the app does not already ship. Normally nothing."""
         threading.Thread(target=self._download_all, daemon=True).start()
 
-    def _download_all(self):
+    def _download_all(self, force: bool = False):
         headers = {
             "User-Agent": f"VEIM/{__version__} (https://github.com/Cir0cuit/VEIM)"
         }
         for key, url in ICON_URLS.items():
             cache_file = os.path.join(self.cache_dir, f"{key}.png")
-            if not os.path.exists(cache_file):
+            if force or self._icon_path(key) is None:
                 try:
                     if url.startswith(BUNDLED_PREFIX):
                         self._render_bundled(key, url[len(BUNDLED_PREFIX):], cache_file)
