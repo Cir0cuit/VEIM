@@ -5,7 +5,7 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 386 tests, no network and no display needed
+pytest                  # 412 tests, no network and no display needed
 pytest -m network       # also resolve all 139 editions against live mirrors
 ```
 

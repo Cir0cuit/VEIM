@@ -154,6 +154,13 @@ one-time job for [Ventoy's own installer](https://www.ventoy.net/). VEIM never
 formats a drive — it creates `Managed_ISOs/` and `ventoy/` on one and writes
 only in there.
 
+**The drive is not in the list.** VEIM offers what is really mounted: the drive
+letters on Windows, `/Volumes` on macOS, and whatever is mounted under `/media`,
+`/run/media` and `/mnt` on Linux. An empty directory left behind by an unmounted
+drive is not offered — the free space such a folder reports belongs to the
+system disk, not to anything you plugged in. Mount the drive and press
+**Refresh**, or point **Browse Folder…** straight at it.
+
 **Will it touch files I put on the drive myself?** No. ISOs live in
 `Managed_ISOs/`, the boot menu is `ventoy/ventoy.json`, and aliases you wrote by
 hand in that file are kept. Removing a distribution asks before it deletes

@@ -68,7 +68,7 @@ def build(app, theme: str, page: str):
 
     # Downloads must never actually start while capturing.
     DashboardView._worker_fetch_and_start_download = lambda *a, **kw: None
-    DriveDetector.inspect_path = staticmethod(lambda path: DriveInfo(
+    DriveDetector.inspect_path = staticmethod(lambda path, *_: DriveInfo(
         path=DRIVE_LABEL, label="VENTOY", total_gb=DRIVE_TOTAL_GB,
         free_gb=DRIVE_FREE_GB, used_gb=DRIVE_TOTAL_GB - DRIVE_FREE_GB,
         free_pct=DRIVE_FREE_GB / DRIVE_TOTAL_GB * 100, is_removable=True,
