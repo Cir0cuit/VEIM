@@ -162,6 +162,16 @@ def test_workflow_builds_all_three_platforms():
         assert f"target: {target}" in workflow
 
 
+def test_publishing_survives_a_release_that_already_exists():
+    """Publishing a release from the GitHub UI creates the tag that starts the
+    workflow, so by the time it runs there is a release to attach to. Creating
+    one unconditionally threw every built installer away."""
+    workflow = read(WORKFLOW)
+
+    assert "gh release view" in workflow, "the publish step must look first"
+    assert "gh release upload" in workflow, "and upload to what is already there"
+
+
 def test_the_declared_version_is_a_release_number():
     from packaging.version import Version
 

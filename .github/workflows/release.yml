@@ -138,6 +138,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
-            --title "VEIM ${{ needs.version.outputs.version }}" \
-            --generate-notes
+          # The release may already exist. Publishing one from the GitHub UI is
+          # itself a way to create the tag that starts this run, and then
+          # `gh release create` has nothing to create and fails with every
+          # installer already built. Attach them to what is there instead, and
+          # leave the notes as whoever wrote them wrote them.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME exists; uploading the installers to it."
+            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" artifacts/* \
+              --title "VEIM ${{ needs.version.outputs.version }}" \
+              --generate-notes
+          fi

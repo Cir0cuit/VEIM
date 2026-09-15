@@ -5,7 +5,7 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 443 tests, no network and no display needed
+pytest                  # 444 tests, no network and no display needed
 pytest -m network       # also resolve all 139 editions against live mirrors
 ```
 
@@ -100,6 +100,11 @@ to GitHub Releases:
 The tag has to match `__version__` or the workflow stops before building
 anything — the in-app update check compares the running version against the
 release tag, so a mismatch would either hide a release or advertise one forever.
+
+Publishing the release from the GitHub UI works too: that creates the tag, which
+starts the same workflow, and the installers are uploaded to the release you
+already wrote. Whichever way the tag arrives, the release ends up with four
+installers and `SHA256SUMS.txt` attached.
 
 Everything starts from PyInstaller: `pyinstaller packaging/veim.spec` produces
 `dist/VEIM` (`dist/VEIM.app` on macOS), and the per-platform scripts under
