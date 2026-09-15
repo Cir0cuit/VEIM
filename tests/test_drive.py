@@ -19,6 +19,15 @@ from src.core.drive import (
     read_mount_table,
 )
 
+# The mount table is a Linux artefact and so are the paths in it: these tests
+# feed POSIX paths through os.path.realpath(), which on Windows turns /mnt/usb
+# into C:\mnt\usb. The scan they cover never runs there - get_drives() hands
+# Windows off to the drive-letter branch - so they are skipped rather than
+# rewritten in a path flavour the code never sees.
+posix_paths = pytest.mark.skipif(
+    os.name != "posix", reason="Linux mount-table paths",
+)
+
 # A udisks2-mounted Ventoy stick, with optional fields before the separator.
 VENTOY_LINE = (
     "36 35 8:33 / /run/media/ana/VENTOY rw,nosuid,nodev,relatime "
@@ -123,6 +132,7 @@ def test_mount_at_path_falls_back_to_ismount_without_a_table(tmp_path, monkeypat
     assert mount_at_path(str(tmp_path), {}) is None
 
 
+@posix_paths
 def test_mount_for_path_picks_the_longest_containing_mount():
     table = {
         "/": MountPoint(path="/", source="/dev/sda2", fstype="btrfs"),
@@ -148,6 +158,9 @@ def linux_media(tmp_path, monkeypatch):
     Every path reports the host filesystem's capacity, which is exactly what an
     unmounted directory does in real life.
     """
+    if os.name != "posix":
+        pytest.skip("Linux mount-table paths")
+
     roots = []
     for name in ("media", "run-media", "mnt"):
         path = tmp_path / name
