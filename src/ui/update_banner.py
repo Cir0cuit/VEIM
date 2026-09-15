@@ -47,8 +47,14 @@ class UpdateBanner(QFrame):
     def check_in_background(self) -> None:
         def _worker():
             release = app_update.check()
-            if release:
+            if not release:
+                return
+            try:
                 self._bridge.found.emit(release.version, release.url)
+            except RuntimeError:
+                # Quitting inside the ten seconds the request can take deletes
+                # the widget out from under this thread.
+                pass
 
         threading.Thread(target=_worker, daemon=True).start()
 

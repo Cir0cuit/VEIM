@@ -63,9 +63,13 @@ def check(installed: str = __version__, force: bool = False) -> Optional[Release
     """
     state = _read_state()
     if not force and time.time() - state.get("last_check", 0) < CHECK_INTERVAL:
-        pending = state.get("pending")
-        if pending and _newer(pending.get("version", ""), installed):
-            return Release(pending["version"], pending["url"], pending.get("notes", ""))
+        pending = state.get("pending") or {}
+        # Every field is read defensively: this file outlives the version that
+        # wrote it, and a missing key here would kill the checking thread.
+        if _newer(pending.get("version", ""), installed):
+            return Release(pending["version"],
+                           pending.get("url") or RELEASES_PAGE,
+                           pending.get("notes", ""))
         return None
 
     try:
