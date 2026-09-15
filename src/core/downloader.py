@@ -7,6 +7,7 @@ import requests
 import shutil
 from collections import deque
 from typing import Callable, Optional
+from urllib.parse import urlparse
 from src.core.logger import log
 
 # Speed is averaged over this window; a single chunk-to-chunk sample measures
@@ -31,6 +32,58 @@ class ChecksumError(DownloadError):
 
 class ArchiveError(DownloadError):
     """The download was an archive we could not turn into a bootable ISO."""
+
+
+def describe_failure(exc: Exception, url: str = "") -> str:
+    """A sentence a person can act on, instead of a requests traceback.
+
+    The UI shows whatever comes back from a failed transfer, and the raw
+    exception is a 300-character urllib3 dump naming a pool class and a C
+    source line. The detail still reaches the log; this is what reaches the
+    user.
+    """
+    if isinstance(exc, DownloadError):
+        return str(exc)
+
+    host = ""
+    request = getattr(exc, "request", None)
+    for candidate in (getattr(request, "url", "") or "", url):
+        if candidate:
+            try:
+                host = urlparse(candidate).netloc or ""
+            except ValueError:
+                host = ""
+            if host:
+                break
+    where = f" ({host})" if host else ""
+
+    if isinstance(exc, requests.exceptions.SSLError):
+        return (f"The mirror's security certificate is not valid{where}. "
+                f"That is a fault on the mirror, not on your machine — "
+                f"try again later.")
+    if isinstance(exc, (requests.exceptions.ConnectTimeout,
+                        requests.exceptions.ReadTimeout)):
+        return f"The mirror{where} stopped responding."
+    if isinstance(exc, requests.exceptions.TooManyRedirects):
+        return f"The mirror{where} redirected in a loop."
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 404:
+            return f"The mirror{where} no longer has this file."
+        if status in (401, 403):
+            return f"The mirror{where} refused the download."
+        if status and 500 <= status < 600:
+            return f"The mirror{where} is having trouble (HTTP {status})."
+        return f"The mirror{where} returned HTTP {status}." if status else \
+            f"The mirror{where} rejected the download."
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return f"Could not reach the mirror{where}. Check your connection."
+    if isinstance(exc, OSError):
+        reason = getattr(exc, "strerror", None) or str(exc)
+        return f"Could not write to the drive: {reason}"
+
+    text = str(exc).strip() or exc.__class__.__name__
+    return text if len(text) <= 200 else text[:197] + "..."
 
 
 def extract_iso_from_zip(zip_path: str, dest_path: str) -> None:
@@ -307,7 +360,7 @@ class DownloadTask:
                 # Retrying fixes neither of these.
                 log.error(f"Download could not be finalised for {self.url}: {e}")
                 if completion_cb:
-                    completion_cb(False, str(e))
+                    completion_cb(False, describe_failure(e, self.url))
                 return
             except (requests.exceptions.RequestException, DownloadError, IOError) as e:
                 retry_count += 1
@@ -320,7 +373,7 @@ class DownloadTask:
                         except Exception:
                             pass
                     if completion_cb:
-                        completion_cb(False, str(e))
+                        completion_cb(False, describe_failure(e, self.url))
                     return
                 # Wait briefly and resume with "ab"
                 mode = "ab"
@@ -328,6 +381,6 @@ class DownloadTask:
             except Exception as e:
                 log.exception(f"Fatal error during download: {e}")
                 if completion_cb:
-                    completion_cb(False, str(e))
+                    completion_cb(False, describe_failure(e, self.url))
                 return
 
