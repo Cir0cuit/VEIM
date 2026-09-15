@@ -5,7 +5,7 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 311 tests, no network and no display needed
+pytest                  # 386 tests, no network and no display needed
 pytest -m network       # also resolve all 139 editions against live mirrors
 ```
 
@@ -65,8 +65,10 @@ there — registration fails loudly if the entry is missing.
 cannot determine a current release. Never return a hardcoded URL as a fallback;
 the suite checks for it. Supply `sha256` when the project publishes one.
 
-Add an entry to `ICON_URLS` in `src/core/icons.py`, or the catalog draws a
-placeholder — a missing icon is otherwise silent.
+Add an entry to `ICON_URLS` in `src/core/icons.py`, then run
+`python tools/fetch_icons.py` and commit the PNG it writes to
+`src/assets/icons/`. The app ships its logos rather than fetching them, and the
+suite fails if a distribution has none.
 
 ## Adding a theme
 
@@ -112,6 +114,7 @@ files go, and a test fails if the spec stops bundling an asset the app reads.
 
 | Script | Purpose |
 |---|---|
+| `tools/fetch_icons.py` | Renders the distribution logos in `ICON_URLS` into `src/assets/icons/`, which is committed and shipped. Checks each result: Qt renders a subset of SVG and fails silently on the rest, writing a blank image rather than none. |
 | `tools/build_icons.py` | Renders `src/assets/branding/veim.svg` into the PNG, `.ico` and `.icns` files the app and the installers use. Run it after editing the SVG. |
 | `tools/capture_docs_screenshots.py` | Regenerates the images the README embeds, from a scripted drive. Refuses to save if the sidebar shows a real path instead of `K:\`. |
 | `tools/capture_ui_screenshots.py` | Renders the UI to `screenshots/` for local inspection. Not for documentation — the captures show a real path. |
