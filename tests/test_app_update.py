@@ -25,6 +25,10 @@ class _Response:
         return self._payload
 
 
+def _offline(*_a, **_k):
+    raise app_update.requests.exceptions.ConnectionError("offline")
+
+
 def serve(monkeypatch, payload):
     monkeypatch.setattr(app_update.requests, "get",
                         lambda *a, **k: _Response(payload))
@@ -62,7 +66,9 @@ def test_a_failed_request_is_not_fatal(state_file, monkeypatch):
     assert app_update.check(installed="1.0.1") is None
 
 
-def test_the_check_is_throttled(state_file, monkeypatch):
+def test_every_start_asks(state_file, monkeypatch):
+    """VEIM is opened and closed rather than left running, so a stored answer
+    is how a release published since the last run goes unmentioned."""
     calls = []
 
     def counted(*a, **k):
@@ -72,14 +78,29 @@ def test_the_check_is_throttled(state_file, monkeypatch):
     monkeypatch.setattr(app_update.requests, "get", counted)
     app_update.check(installed="1.0.1")
     app_update.check(installed="1.0.1")
-    assert len(calls) == 1, "the second check should have used the stored result"
+
+    assert len(calls) == 2, "a start must not answer from the last start"
 
 
-def test_a_state_file_missing_fields_does_not_raise(state_file):
+def test_a_check_that_cannot_reach_github_offers_what_was_known(state_file, monkeypatch):
+    """Found yesterday, still worth offering on a train today."""
+    state_file.write_text(json.dumps(
+        {"last_check": time.time(),
+         "pending": {"version": "2.0.0", "url": "https://example.invalid/v2"}}),
+        encoding="utf-8")
+    monkeypatch.setattr(app_update.requests, "get", _offline)
+
+    release = app_update.check(installed="1.0.1")
+
+    assert release and release.version == "2.0.0"
+
+
+def test_a_state_file_missing_fields_does_not_raise(state_file, monkeypatch):
     """This file outlives the version that wrote it."""
     state_file.write_text(json.dumps(
         {"last_check": time.time(), "pending": {"version": "9.9.9"}}),
         encoding="utf-8")
+    monkeypatch.setattr(app_update.requests, "get", _offline)
 
     release = app_update.check(installed="1.0.1")
     assert release and release.url == app_update.RELEASES_PAGE
@@ -145,14 +166,13 @@ def test_a_manual_check_ignores_the_daily_throttle(state_file, monkeypatch):
     assert len(calls) == 2, "pressing the button must ask, not recite"
 
 
-def test_a_manual_check_feeds_the_throttled_one(state_file, monkeypatch):
-    """Both go through the same recorded state, so a manual check counts as
-    the day's check rather than doubling the requests."""
+def test_a_manual_check_records_what_it_found(state_file, monkeypatch):
+    """Both write the same state, and that is what a later start with no
+    connection falls back to."""
     serve(monkeypatch, {"tag_name": "v2.0.0", "html_url": "https://example.invalid"})
     app_update.check_now(installed="1.0.1")
 
-    monkeypatch.setattr(app_update.requests, "get",
-                        lambda *a, **k: pytest.fail("should have used the stored result"))
+    monkeypatch.setattr(app_update.requests, "get", _offline)
 
     assert app_update.check(installed="1.0.1").version == "2.0.0"
 
@@ -177,6 +197,7 @@ def test_skipping_also_covers_what_that_release_overtook(state_file):
 def test_snoozing_mutes_everything_for_a_week(state_file, monkeypatch):
     app_update.snooze()
     assert app_update.is_muted("9.9.9")
+    assert app_update.is_snoozed(), "and the check can skip asking at all"
 
     later = time.time() + app_update.SNOOZE_DURATION + 1
     monkeypatch.setattr(app_update.time, "time", lambda: later)

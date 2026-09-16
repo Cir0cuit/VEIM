@@ -3,11 +3,18 @@
 Checks the GitHub Releases API, not a branch: what people install comes from a
 release, so that is what a version comparison has to be against.
 
-Two entry points. check() is the quiet one the startup banner uses: throttled
-to once a day, and None whether there is nothing new or GitHub never answered,
-because a banner has nothing to say in either case. check_now() is for someone
-who pressed a button, and it distinguishes those two outcomes - telling a user
-with no connection that they are up to date would be a lie.
+Two entry points. check() is the automatic one, and it answers None whether
+there is nothing new or GitHub never answered, because the prompt has nothing
+to say in either case. check_now() is for someone who pressed a button, and it
+distinguishes those two outcomes - telling a user with no connection that they
+are up to date would be a lie.
+
+Both ask every time they are called. VEIM is opened, used and closed rather
+than left running, so a check is one request per start, and a cached answer
+from the last run is precisely how a release published since then goes
+unmentioned. What is stored is a fallback rather than a shortcut: it stands in
+when GitHub cannot be reached, so a release already known about is still
+offered on a train.
 
 An answer of "no thanks" is remembered: skip_version() retires one release for
 good and snooze() stops the asking for a week. Both are read by is_muted(),
@@ -31,7 +38,6 @@ REPO = "Cir0cuit/VEIM"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 
-CHECK_INTERVAL = 24 * 3600
 SNOOZE_DURATION = 7 * 24 * 3600
 STATE_FILE = "update_check.json"
 
@@ -119,24 +125,32 @@ def _fetch(installed: str) -> CheckResult:
                        release=Release(tag, url, notes))
 
 
-def check(installed: str = __version__, force: bool = False) -> Optional[Release]:
+def _pending_release(state: dict, installed: str) -> Optional[Release]:
+    """What the last check that did reach GitHub found, if it is still newer.
+
+    Every field is read defensively: this file outlives the version that wrote
+    it, and a missing key here would kill the checking thread.
+    """
+    pending = state.get("pending") or {}
+    if not _newer(pending.get("version", ""), installed):
+        return None
+    return Release(pending["version"],
+                   pending.get("url") or RELEASES_PAGE,
+                   pending.get("notes", ""))
+
+
+def check(installed: str = __version__) -> Optional[Release]:
     """The published release when it is newer than this build, else None.
 
-    Throttled to one request a day. Never raises: a failed check leaves the app
-    working exactly as it was, which is the whole point of it being optional.
+    Asks every time, which is once per start. Never raises: a check that could
+    not reach GitHub falls back to what the last one found, and otherwise
+    leaves the app working exactly as it was, which is the whole point of it
+    being optional.
     """
-    state = _read_state()
-    if not force and time.time() - state.get("last_check", 0) < CHECK_INTERVAL:
-        pending = state.get("pending") or {}
-        # Every field is read defensively: this file outlives the version that
-        # wrote it, and a missing key here would kill the checking thread.
-        if _newer(pending.get("version", ""), installed):
-            return Release(pending["version"],
-                           pending.get("url") or RELEASES_PAGE,
-                           pending.get("notes", ""))
-        return None
-
-    return _fetch(installed).release
+    result = _fetch(installed)
+    if result.state == UNREACHABLE:
+        return _pending_release(_read_state(), installed)
+    return result.release
 
 
 def check_now(installed: str = __version__) -> CheckResult:
@@ -163,6 +177,16 @@ def snooze(duration: float = SNOOZE_DURATION) -> None:
     _write_state(state)
 
 
+def is_snoozed() -> bool:
+    """Whether the asking is off for a while.
+
+    Version-independent, unlike a skip, so the automatic check can consult it
+    before the request rather than after: a week of quiet is also a week of not
+    troubling GitHub.
+    """
+    return time.time() < _read_state().get("snoozed_until", 0)
+
+
 def is_muted(version: str) -> bool:
     """Whether the user has already refused to hear about this release.
 
@@ -170,9 +194,8 @@ def is_muted(version: str) -> bool:
     than no prompt, and a button that ignores the user is worse still - so
     check_now() never consults this.
     """
-    state = _read_state()
-    skipped = state.get("skipped_version", "")
+    skipped = _read_state().get("skipped_version", "")
     if skipped and not _newer(version, skipped):
         # This release, or one it has already overtaken, was refused.
         return True
-    return time.time() < state.get("snoozed_until", 0)
+    return is_snoozed()

@@ -58,9 +58,9 @@ Nothing else to install.
 | **macOS** | `VEIM-x.y.z-macos-arm64.dmg` (Apple Silicon) or `-x86_64.dmg` (Intel). Open it and drag VEIM to Applications. |
 | **Linux** | `VEIM-x.y.z-x86_64.AppImage` — `chmod +x` it once and double-click. No packages, no dependencies. |
 
-The app checks for a new version of itself once a day and asks, in so many
-words, what you want to do about it: download it, skip that version, or hear
-nothing for a week. The version it is running sits next to the VEIM wordmark,
+The app checks for a new version of itself each time it starts and asks, in so
+many words, what you want to do about it: download it, skip that version, or
+hear nothing for a week. The version it is running sits next to the VEIM wordmark,
 and the drive picker has a **Check for VEIM Updates** button — separate from
 **Check All Updates**, which is about the ISOs on your drive.
 
