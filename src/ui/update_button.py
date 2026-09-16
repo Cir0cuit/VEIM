@@ -11,14 +11,13 @@ are different answers on purpose, which is why this uses check_now() rather
 than the automatic check().
 """
 import threading
-import webbrowser
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QPushButton
 
 from src.core import app_update
-from src.ui.components import set_button_kind
+from src.ui.components import open_link, set_button_kind
 
 CHECK_TEXT = "Check for VEIM Updates"
 BUSY_TEXT = "Checking…"
@@ -68,7 +67,9 @@ class UpdateCheckButton(QPushButton):
 
     def _on_click(self):
         if self._state == app_update.UPDATE_AVAILABLE:
-            webbrowser.open(self._url)
+            # Stays on offer either way: a link that did not open is a reason
+            # to press again, not to lose the release.
+            open_link(self._url, self)
             return
         self.check()
 

@@ -10,14 +10,13 @@ and Remind Me in a Week stops the asking. Closing the dialog is the fourth
 answer - not now - and it is asked again on the next run.
 """
 import threading
-import webbrowser
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout
 
 from src import __version__
 from src.core import app_update
-from src.ui.components import make_button
+from src.ui.components import make_button, open_link
 
 # What the dialog says a release contains. Deliberately fixed text: the notes
 # GitHub carries are the commit messages, which are written for whoever is
@@ -77,8 +76,11 @@ class UpdatePrompt(QDialog):
         root.addLayout(actions)
 
     def _download(self):
-        webbrowser.open(self.release.url)
-        self.accept()
+        # Only close on a browser that actually started: the dialog is the only
+        # thing still offering this release, and dismissing it on a link that
+        # went nowhere would take that away too.
+        if open_link(self.release.url, self):
+            self.accept()
 
     def _skip(self):
         app_update.skip_version(self.release.version)
@@ -109,6 +111,10 @@ class UpdateNotifier(QObject):
 
     def check_in_background(self):
         def _worker():
+            if app_update.is_snoozed():
+                # A week of no prompts is a week of no requests either; the
+                # snooze covers whatever gets published in the meantime.
+                return
             release = app_update.check()
             if not release or app_update.is_muted(release.version):
                 return

@@ -7,11 +7,12 @@ from typing import Callable, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QComboBox, QListView, QHBoxLayout,
-    QVBoxLayout, QProxyStyle, QSizePolicy, QStyle, QLayout
+    QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout
 )
 from PySide6.QtCore import Qt, QSize, QRect, QPoint
 from PySide6.QtGui import QCursor, QPixmap, QFontMetrics
 
+from src.core import browser
 from src.ui.theme import theme_manager
 
 
@@ -369,6 +370,26 @@ def make_button(text: str, kind: str = "ghost", on_click: Optional[Callable] = N
     if on_click:
         btn.clicked.connect(on_click)
     return btn
+
+
+def open_link(url: str, parent=None) -> bool:
+    """Open a URL in the user's browser, and say where to go when that fails.
+
+    Every caller is a button whose whole purpose is that link, so a click that
+    quietly does nothing is the one outcome worth ruling out: if no browser can
+    be started, the address goes on screen where it can be read and copied.
+    """
+    if browser.open_url(url):
+        return True
+
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Information)
+    box.setWindowTitle("Open this page")
+    box.setText("VEIM could not start a browser on this system.")
+    box.setInformativeText(url)
+    box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    box.exec()
+    return False
 
 
 def set_button_kind(btn: QPushButton, kind: str):

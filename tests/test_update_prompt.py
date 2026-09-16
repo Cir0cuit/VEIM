@@ -59,12 +59,23 @@ def test_it_summarises_rather_than_reciting_the_commit_log(prompt):
 
 def test_download_opens_the_release_page(prompt, monkeypatch):
     opened = []
-    monkeypatch.setattr(up.webbrowser, "open", opened.append)
+    monkeypatch.setattr(up, "open_link", lambda url, parent=None: opened.append(url) or True)
 
     prompt.btn_download.click()
 
     assert opened == ["https://example.invalid/releases/v2.0.0"]
     assert prompt.result() == UpdatePrompt.DialogCode.Accepted
+
+
+def test_a_browser_that_never_opened_leaves_the_dialog_up(prompt, monkeypatch):
+    """Closing on a link that went nowhere would take the release away with
+    it - which is exactly what happened inside the AppImage."""
+    monkeypatch.setattr(up, "open_link", lambda url, parent=None: False)
+
+    prompt.btn_download.click()
+
+    assert prompt.isVisible() or not prompt.result(), "it must not have accepted"
+    assert prompt.result() != UpdatePrompt.DialogCode.Accepted
 
 
 def test_skipping_retires_that_version(prompt, state_file):
@@ -129,6 +140,20 @@ def test_a_skipped_release_is_not_raised_again(qtbot, state_file, monkeypatch):
 def test_nothing_to_report_raises_nothing(qtbot, state_file, monkeypatch):
     window = _window(qtbot)
     monkeypatch.setattr(app_update, "check", lambda *a, **k: None)
+    raised = _capture_prompts(monkeypatch)
+    _run_worker_inline(monkeypatch)
+
+    UpdateNotifier(window).check_in_background()
+
+    assert raised == []
+
+
+def test_a_snooze_stops_the_asking_too(qtbot, state_file, monkeypatch):
+    """Seven days of no prompts is seven days of not troubling GitHub."""
+    window = _window(qtbot)
+    app_update.snooze()
+    monkeypatch.setattr(app_update, "check",
+                        lambda *a, **k: pytest.fail("should not have asked"))
     raised = _capture_prompts(monkeypatch)
     _run_worker_inline(monkeypatch)
 

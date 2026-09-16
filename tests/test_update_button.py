@@ -72,12 +72,21 @@ def test_an_update_turns_it_into_a_download(button):
 
 def test_pressing_download_opens_the_release_page(button, monkeypatch):
     opened = []
-    monkeypatch.setattr(ub.webbrowser, "open", opened.append)
+    monkeypatch.setattr(ub, "open_link", lambda url, parent=None: opened.append(url) or True)
     button._report(_update("2.0.0", "https://example.invalid/releases/v2.0.0"))
 
     button.click()
 
     assert opened == ["https://example.invalid/releases/v2.0.0"]
+
+
+def test_the_release_stays_on_offer_when_no_browser_opens(button, monkeypatch):
+    monkeypatch.setattr(ub, "open_link", lambda url, parent=None: False)
+    button._report(_update("2.0.0"))
+
+    button.click()
+
+    assert "2.0.0" in button.text(), "a link that failed is a reason to press again"
 
 
 # ------------------------------------------------------------------ recovery

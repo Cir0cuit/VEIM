@@ -5,7 +5,7 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 444 tests, no network and no display needed
+pytest                  # 460 tests, no network and no display needed
 pytest -m network       # also resolve all 139 editions against live mirrors
 ```
 
@@ -31,6 +31,7 @@ src/
 │   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError
 │   ├── icons.py           logo fetching, rasterising and High-DPI caching
 │   ├── app_update.py      whether a newer VEIM has been released
+│   ├── browser.py         opening a link without the bundle's environment
 │   └── logger.py
 ├── recipes/               one module per distribution family
 │   └── registry.py        registration and the catalog taxonomy
