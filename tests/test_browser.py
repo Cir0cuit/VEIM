@@ -54,12 +54,15 @@ def test_a_bundle_path_with_no_saved_original_is_still_stripped(frozen, monkeypa
 
 
 def test_system_entries_survive_alongside_bundle_ones(frozen, monkeypatch):
-    monkeypatch.setenv("XDG_DATA_DIRS", f"{BUNDLE}/share:/usr/share:/usr/local/share")
+    """Joined with this platform's separator, because that is what the split
+    that filters them uses."""
+    monkeypatch.setenv("XDG_DATA_DIRS", os.pathsep.join(
+        [f"{BUNDLE}/share", "/usr/share", "/usr/local/share"]))
     monkeypatch.delenv("XDG_DATA_DIRS_ORIG", raising=False)
 
     kept = browser.system_environment()["XDG_DATA_DIRS"]
 
-    assert kept == "/usr/share:/usr/local/share"
+    assert kept == os.pathsep.join(["/usr/share", "/usr/local/share"])
 
 
 def test_it_leaves_everything_else_alone(frozen, monkeypatch):
