@@ -183,8 +183,11 @@ class ElementaryRecipe(DistroRecipe):
                     url = f"https://{m.group(1)}"
                     fname = url.split("/")[-1]
                     ver_m = re.search(r'elementaryos-([0-9\.\-]+)', fname)
-                    ver = ver_m.group(1) if ver_m else "8.1"
-                    return DownloadInfo(version=ver, url=url, filename=fname)
+                    # No version in the name means the page has changed. A
+                    # number written in here would go on being reported as the
+                    # latest release long after it stopped being one.
+                    if ver_m:
+                        return DownloadInfo(version=ver_m.group(1), url=url, filename=fname)
         except Exception as e:
             log.warning(f"[elementary OS] Scrape error: {e}")
 
