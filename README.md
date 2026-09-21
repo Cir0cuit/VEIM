@@ -119,7 +119,7 @@ two-year-old ISO that looked fine in the list.
 | **Resumable transfers** | Downloads stream to a `.part` file and pick up where they stopped, using HTTP range requests. Several can run at once, and free space is checked before any of them starts. |
 | **Checksum verification** | Where a project publishes a SHA-256, the finished file is hashed before it is renamed from `.part` to `.iso`, and a mismatch deletes it instead of writing it to your drive. |
 | **Readable boot menu** | Writes `ventoy/ventoy.json` aliases like `Fedora 44 KDE Plasma`. Aliases you added by hand are preserved. |
-| **Adopts loose ISOs** | ISOs you copied onto the drive yourself can be moved into `Managed_ISOs/` and tracked from then on, in one click. |
+| **Adopts loose ISOs, when asked** | An ISO you copied onto the drive yourself is offered for adoption only if it is named exactly like an official download, so its version is known and it can really be updated. **Adopt ISOs** lists those, and each one is yours to adopt or to leave alone for good; **Remove** on a row can likewise keep the file and only stop managing it. A renamed, customised or unknown ISO is never listed, tracked or changed — it just keeps booting. |
 | **Unpacks archive-only releases** | Memtest86+ ships its image only inside a `.zip`, and Ventoy boots `.iso` files. VEIM checks the archive, extracts the ISO and deletes the zip. |
 | **Eight themes** | Dark Modern, Amoled Black, Gruvbox Dark, Cyberpunk, Nord, Dracula, Solarized Light and Clean Light, plus System Match. |
 

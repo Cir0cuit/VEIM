@@ -6,16 +6,15 @@ theme picker now live in the sidebar, so the old 64px toolbar - where a long
 drive path ran underneath the buttons and got clipped - is gone.
 """
 import os
-import shutil
 import threading
 from typing import Callable, Dict, Optional, List
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QMessageBox, QDialog
 )
 from PySide6.QtCore import Qt, Signal, QObject
 
-from src.core.inventory import InventoryManager, InventoryItem
+from src.core.inventory import InventoryManager, InventoryItem, AdoptionCandidate
 from src.core.drive import DriveDetector
 from src.recipes.registry import registry
 from src.core.recipe_base import DistroRecipe, ScrapeError
@@ -25,6 +24,7 @@ from src.ui.theme import theme_manager, ThemeColors
 from src.ui.components import make_button, EmptyState
 from src.ui.distro_card import DistroCard
 from src.ui.downloading_card import DownloadingCard
+from src.ui.adopt_dialog import AdoptDialog, ADOPT, EXCLUDE, UNDECIDED
 
 
 class DashboardWorkerBridge(QObject):
@@ -39,6 +39,8 @@ class DashboardWorkerBridge(QObject):
     error_signal = Signal(str, str)               # composite_key, error_msg
 
 
+ADOPT_TEXT = "Adopt ISOs"
+EXCLUDED_TEXT = "Excluded ISOs"
 CHECK_ALL_TEXT = "Check All Updates"
 CHECK_ALL_BUSY_TEXT = "Checking…"
 
@@ -115,7 +117,7 @@ class DashboardView(QWidget):
         header.addLayout(titles)
         header.addStretch()
 
-        self.btn_adopt = make_button("Adopt Root ISOs", "ghost", self._adopt_root_isos)
+        self.btn_adopt = make_button(ADOPT_TEXT, "ghost", self._open_adopt_dialog)
         self.btn_adopt.hide()
         header.addWidget(self.btn_adopt)
 
@@ -158,6 +160,15 @@ class DashboardView(QWidget):
         self.installed_layout.setSpacing(8)
         body_layout.addLayout(self.installed_layout)
 
+        # ISOs in Managed_ISOs that are none of VEIM's business. Said once,
+        # here, instead of giving each a row that can do nothing.
+        self.lbl_unmanaged = QLabel("")
+        self.lbl_unmanaged.setObjectName("rowMeta")
+        self.lbl_unmanaged.setWordWrap(True)
+        self.lbl_unmanaged.hide()
+        body_layout.addSpacing(6)
+        body_layout.addWidget(self.lbl_unmanaged)
+
         body_layout.addStretch()
         self.scroll.setWidget(body)
         root.addWidget(self.scroll, 1)
@@ -174,48 +185,57 @@ class DashboardView(QWidget):
 
     # -------------------------------------------------------------- drive
 
-    def _find_root_isos(self) -> List[str]:
-        if not os.path.exists(self.drive_path):
-            return []
-        try:
-            return [
-                f for f in os.listdir(self.drive_path)
-                if f.lower().endswith(".iso") and os.path.isfile(os.path.join(self.drive_path, f))
-            ]
-        except Exception as e:
-            log.warning(f"Error scanning root ISOs: {e}")
-            return []
+    def _display_name(self, candidate: AdoptionCandidate) -> str:
+        """Named the way a download of the same thing would be."""
+        found = candidate.identity
+        recipe = registry.get_recipe(found.key)
+        if not recipe:
+            return candidate.filename
+        flavor = next((f for f in recipe.get_flavors() if f.id == found.flavor_id), None)
+        return f"{recipe.name} {flavor.name if flavor else found.flavor_id.title()}"
 
-    def _adopt_root_isos(self, filenames: Optional[List[str]] = None):
-        # Qt passes the button's `checked` bool positionally; ignore it.
-        if not isinstance(filenames, list):
-            filenames = self._find_root_isos()
-        if not filenames:
+    def _adoptable(self, include_excluded: bool = False) -> List[AdoptionCandidate]:
+        """Candidates the catalog can actually update: a recognised name is not
+        enough if the recipe no longer offers that flavor."""
+        out = []
+        for candidate in self.inventory_mgr.find_candidates(include_excluded):
+            recipe = registry.get_recipe(candidate.identity.key)
+            if recipe and any(f.id == candidate.identity.flavor_id for f in recipe.get_flavors()):
+                out.append(candidate)
+        return out
+
+    def _open_adopt_dialog(self, *_):
+        # Only what still needs, or has been given, an answer. An ISO that was
+        # adopted is a row in the list now; showing it here again looked like
+        # the adoption had not taken.
+        candidates = sorted(self._adoptable(include_excluded=True), key=lambda c: c.excluded)
+        if not candidates:
             return
+        listed = {c.filename for c in candidates}
+        unrecognised = len([f for f in self.inventory_mgr.unmanaged_files() if f not in listed])
 
-        dest_dir = os.path.join(self.drive_path, "Managed_ISOs")
-        os.makedirs(dest_dir, exist_ok=True)
+        dialog = AdoptDialog(
+            candidates, {c.filename: self._display_name(c) for c in candidates},
+            unrecognised=unrecognised, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._apply_adoption(candidates, dialog.choices())
 
-        adopted = 0
-        for fname in filenames:
-            src = os.path.join(self.drive_path, fname)
-            dst = os.path.join(dest_dir, fname)
-            try:
-                if os.path.exists(src):
-                    if not os.path.exists(dst):
-                        shutil.move(src, dst)
-                    else:
-                        os.remove(src)
-                    adopted += 1
-            except Exception as e:
-                log.error(f"Error adopting {fname}: {e}")
+    def _apply_adoption(self, candidates: List[AdoptionCandidate], choices: Dict[str, str]):
+        failed = []
+        for candidate in candidates:
+            choice = choices.get(candidate.filename, UNDECIDED)
+            if choice == ADOPT:
+                if not self.inventory_mgr.adopt(candidate, self._display_name(candidate)):
+                    failed.append(candidate.filename)
+            elif (choice == EXCLUDE) != candidate.excluded:
+                self.inventory_mgr.set_excluded(candidate.filename, choice == EXCLUDE)
 
-        self.inventory_mgr.sync_filesystem()
         self.refresh_installed_list()
-        QMessageBox.information(
-            self, "Root ISOs adopted",
-            f"Moved {adopted} ISO(s) into Managed_ISOs."
-        )
+        if failed:
+            QMessageBox.warning(
+                self, "Could not adopt",
+                "These could not be moved into Managed_ISOs:\n\n" + "\n".join(failed))
 
     def drive_stats(self):
         """(free_gb, total_gb) for the sidebar, or (0, 0) if unavailable."""
@@ -277,12 +297,7 @@ class DashboardView(QWidget):
         self._sync_check_all()
         self._refresh_subtitle()
 
-        root_isos = self._find_root_isos()
-        if root_isos:
-            self.btn_adopt.setText(f"Adopt Root ISOs ({len(root_isos)})")
-            self.btn_adopt.show()
-        else:
-            self.btn_adopt.hide()
+        self._refresh_adoption()
 
         self.drive_changed.emit()
 
@@ -308,6 +323,26 @@ class DashboardView(QWidget):
         elif self.cards and all(c.is_up_to_date for c in self.cards.values()):
             bits.append("all up to date")
         self.subtitle.setText("  ·  ".join(bits))
+
+    def _refresh_adoption(self):
+        """The header button, and the note about ISOs that are left alone."""
+        candidates = self._adoptable(include_excluded=True)
+        waiting = sum(1 for c in candidates if not c.excluded)
+        # Still reachable with nothing waiting, so an exclusion can be undone -
+        # under a name that does not promise something new to adopt.
+        self.btn_adopt.setVisible(bool(candidates))
+        self.btn_adopt.setText(f"{ADOPT_TEXT} ({waiting})" if waiting else EXCLUDED_TEXT)
+
+        waiting_names = {c.filename for c in candidates if not c.excluded}
+        others = [f for f in self.inventory_mgr.unmanaged_files() if f not in waiting_names]
+        if others:
+            count = len(others)
+            self.lbl_unmanaged.setText(
+                f"{count} other ISO{'s' if count != 1 else ''} in Managed_ISOs "
+                f"{'are' if count != 1 else 'is'} not managed by VEIM. "
+                "They boot as usual and are never checked or changed.")
+            self.lbl_unmanaged.setToolTip("\n".join(others))
+        self.lbl_unmanaged.setVisible(bool(others))
 
     def _sync_check_all(self):
         """The header button is its own busy indicator, like each row's pill."""
@@ -539,7 +574,6 @@ class DashboardView(QWidget):
             if target:
                 self.download_ended.emit(target[0], target[1], True, msg)
 
-            self.inventory_mgr.sync_filesystem()
             self.refresh_installed_list()
         else:
             msg = msg or "Download interrupted"
@@ -627,14 +661,35 @@ class DashboardView(QWidget):
     def _handle_single_cancel(self, item: InventoryItem, card: DistroCard):
         self._cancel_download(self._key_of(card))
 
+    def _ask_removal(self, item: InventoryItem) -> str:
+        """"delete", "release" or "" - what Remove should do with this ISO.
+
+        Deleting used to be the only way off the list, which is no way out for
+        an ISO that should stay on the drive but not be managed: a customised
+        image under an official name, or one adopted by mistake.
+        """
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Remove from VEIM")
+        box.setText(f"Remove {item.display_name} ({item.version})?")
+        box.setInformativeText(
+            f"{item.filename}\n\n"
+            "Delete it from the drive, or keep the file and only stop managing it. "
+            "A kept file still boots; VEIM will not check, update or offer it again.")
+        delete = box.addButton("Delete File", QMessageBox.ButtonRole.DestructiveRole)
+        release = box.addButton("Keep File, Stop Managing", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        return "delete" if clicked is delete else "release" if clicked is release else ""
+
     def _handle_single_remove(self, item: InventoryItem, card: DistroCard):
-        reply = QMessageBox.question(
-            self,
-            "Confirm removal",
-            f"Remove {item.display_name} ({item.version}) from the drive?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
+        answer = self._ask_removal(item)
+        if answer == "release":
+            self.inventory_mgr.release(self._key_of(card), exclude=True)
+            self.refresh_installed_list()
+        elif answer == "delete":
             # By the row's own key: two ISOs can share a distro and flavor, and
             # looking the record up by those removed the other one's file.
             self.inventory_mgr.remove_entry(self._key_of(card), delete_file=True)

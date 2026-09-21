@@ -1,11 +1,17 @@
 import json
 import os
-import re
+import shutil
 import time
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
-from pathlib import Path
+from src.core.iso_identity import IsoIdentity, identify
 from src.core.logger import log
 from src.core.ventoy_config import VentoyConfig
+
+# Reserved entry in the inventory file. Every other entry is a record, and a
+# reader that predates this one skips anything that is not a dict.
+EXCLUDED_KEY = "_excluded"
+
 
 class InventoryItem:
     def __init__(self, key: str, flavor_id: str, display_name: str, version: str, filename: str,
@@ -55,6 +61,17 @@ class InventoryItem:
             installed_at=d.get("installed_at", "")
         )
 
+
+@dataclass
+class AdoptionCandidate:
+    """An ISO on the drive that VEIM could keep up to date, but does not yet."""
+    filename: str
+    identity: IsoIdentity
+    size_bytes: int
+    in_root: bool           # still in the drive root, outside Managed_ISOs
+    excluded: bool          # the user said to leave this one alone
+
+
 class InventoryManager:
     def __init__(self, ventoy_root: str):
         self.ventoy_root = ventoy_root
@@ -63,81 +80,174 @@ class InventoryManager:
         self.legacy_inventory_file = os.path.join(self.managed_dir, "vom_inventory.json")
         self.ventoy_config = VentoyConfig(ventoy_root)
         self.items: Dict[str, InventoryItem] = {}  # keyed by f"{key}::{flavor_id}"
+        # Filenames the user has said to leave alone, so they are not offered
+        # for adoption again.
+        self.excluded: set = set()
         self.load()
 
     def _composite_key(self, key: str, flavor_id: str) -> str:
         return f"{key}::{flavor_id}" if flavor_id else key
 
+    def _free_key(self, key: str, flavor_id: str, filename: str) -> str:
+        """The inventory key for a record, made unique when the pair is taken.
+
+        Two ISOs of one distro and flavor can sit on a drive at once - an old
+        release kept next to a new one. Disambiguate rather than overwrite.
+        """
+        ck = self._composite_key(key, flavor_id)
+        if ck in self.items and self.items[ck].filename != filename:
+            ck = f"{ck}::{os.path.splitext(filename)[0]}"
+        return ck
+
     def load(self):
         self.items = {}
+        self.excluded = set()
         path_to_read = self.inventory_file if os.path.exists(self.inventory_file) else self.legacy_inventory_file
-        if os.path.exists(path_to_read):
-            try:
-                with open(path_to_read, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                    for k, val in raw.items():
-                        if isinstance(val, dict):
-                            item = InventoryItem.from_dict(val)
-                            ck = self._composite_key(item.key, item.flavor_id)
-                            full_path = os.path.join(self.managed_dir, item.filename)
-                            if os.path.exists(full_path):
-                                if item.size_bytes == 0:
-                                    item.size_bytes = os.path.getsize(full_path)
-                                self.items[ck] = item
-                            else:
-                                log.info(f"ISO {item.filename} no longer exists on disk, skipping.")
-                log.info(f"Loaded {len(self.items)} installed items from inventory.")
-            except Exception as e:
-                log.error(f"Error loading inventory from {path_to_read}: {e}")
+        if not os.path.exists(path_to_read):
+            return
+        try:
+            with open(path_to_read, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            for k, val in raw.items():
+                if k == EXCLUDED_KEY:
+                    if isinstance(val, list):
+                        self.excluded = {str(name) for name in val}
+                    continue
+                if not isinstance(val, dict):
+                    continue
+                item = InventoryItem.from_dict(val)
+                full_path = os.path.join(self.managed_dir, item.filename)
+                if not os.path.exists(full_path):
+                    log.info(f"ISO {item.filename} no longer exists on disk, skipping.")
+                    continue
+                if not self._still_trackable(item):
+                    log.info(f"{item.filename} is not a download VEIM can keep current; "
+                             "leaving it alone.")
+                    continue
+                if item.size_bytes == 0:
+                    item.size_bytes = os.path.getsize(full_path)
+                self.items[self._free_key(item.key, item.flavor_id, item.filename)] = item
+            log.info(f"Loaded {len(self.items)} installed items from inventory.")
+        except Exception as e:
+            log.error(f"Error loading inventory from {path_to_read}: {e}")
 
-        self.sync_filesystem()
+    @staticmethod
+    def _still_trackable(item: InventoryItem) -> bool:
+        """Re-examine a record that was taken in from the drive, not downloaded.
+
+        Older versions adopted every ISO they found and guessed what it was
+        from a word in the name. An inventory written by one can hold a
+        customised image filed as the official release - offered an update that
+        would overwrite it - and rows for ISOs that nothing can update. A record
+        VEIM downloaded itself carries its URL and is never doubted.
+        """
+        if item.url:
+            return True
+        found = identify(item.filename)
+        if found is None or found.key != item.key:
+            return False
+        # The guess often had the right distro but a placeholder version
+        # ("Latest", "Live"), which made every check report an update.
+        item.flavor_id, item.version = found.flavor_id, found.version
+        return True
 
     def save(self):
         os.makedirs(self.managed_dir, exist_ok=True)
         try:
-            data = {k: item.to_dict() for k, item in self.items.items()}
+            data: Dict[str, Any] = {k: item.to_dict() for k, item in self.items.items()}
+            if self.excluded:
+                data[EXCLUDED_KEY] = sorted(self.excluded)
             with open(self.inventory_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
             log.debug(f"Saved {len(self.items)} items to {self.inventory_file}")
-            
+
             self.ventoy_config.sync_aliases([item.to_dict() for item in self.items.values()])
         except Exception as e:
             log.error(f"Failed to save inventory: {e}")
 
-    def sync_filesystem(self):
-        """Scans Managed_ISOs directory and adds any ISOs that aren't yet tracked."""
-        if not os.path.exists(self.managed_dir):
-            return
+    # -- adoption ----------------------------------------------------------
 
-        existing_filenames = {item.filename for item in self.items.values()}
+    @staticmethod
+    def _iso_names(folder: str) -> List[str]:
         try:
-            for fname in os.listdir(self.managed_dir):
-                if fname.lower().endswith(".iso") and fname not in existing_filenames:
-                    full_path = os.path.join(self.managed_dir, fname)
-                    size = os.path.getsize(full_path)
-                    guessed = self.guess_distro_from_filename(fname)
-                    key = guessed.get("key", "custom")
-                    flavor = guessed.get("flavor_id", "default")
-                    name = guessed.get("display_name", fname)
-                    ver = guessed.get("version", "Unknown")
+            return sorted(
+                f for f in os.listdir(folder)
+                if f.lower().endswith(".iso") and os.path.isfile(os.path.join(folder, f))
+            )
+        except OSError:
+            return []
 
-                    item = InventoryItem(
-                        key=key,
-                        flavor_id=flavor,
-                        display_name=name,
-                        version=ver,
-                        filename=fname,
-                        size_bytes=size
-                    )
-                    ck = self._composite_key(key, flavor)
-                    # Two unrelated ISOs can guess to the same key (two Fedora spins,
-                    # say). Disambiguate rather than overwrite.
-                    if ck in self.items and self.items[ck].filename != fname:
-                        ck = f"{ck}::{os.path.splitext(fname)[0]}"
-                    self.items[ck] = item
-                    log.info(f"Auto-discovered untracked ISO in Managed_ISOs: {fname}")
-        except Exception as e:
-            log.error(f"Error syncing filesystem: {e}")
+    def find_candidates(self, include_excluded: bool = False) -> List[AdoptionCandidate]:
+        """Untracked ISOs named exactly like a download the catalog offers.
+
+        Nothing is taken in from here on its own account: a candidate is only
+        ever adopted because the user picked it. An ISO that identify() does
+        not recognise is not a candidate at all - see iso_identity.
+        """
+        tracked = {item.filename for item in self.items.values()}
+        found: Dict[str, AdoptionCandidate] = {}
+        # Managed_ISOs first: a root file of the same name could not be moved in.
+        for in_root, folder in ((False, self.managed_dir), (True, self.ventoy_root)):
+            for fname in self._iso_names(folder):
+                if fname in tracked or fname in found:
+                    continue
+                identity = identify(fname)
+                if identity is None:
+                    continue
+                excluded = fname in self.excluded
+                if excluded and not include_excluded:
+                    continue
+                found[fname] = AdoptionCandidate(
+                    filename=fname, identity=identity, in_root=in_root, excluded=excluded,
+                    size_bytes=os.path.getsize(os.path.join(folder, fname)))
+        return list(found.values())
+
+    def unmanaged_files(self) -> List[str]:
+        """ISOs in Managed_ISOs that Ventoy boots but VEIM does not track."""
+        tracked = {item.filename for item in self.items.values()}
+        return [f for f in self._iso_names(self.managed_dir) if f not in tracked]
+
+    def adopt(self, candidate: AdoptionCandidate, display_name: str) -> bool:
+        """Start tracking a candidate, moving it into Managed_ISOs if need be."""
+        dst = os.path.join(self.managed_dir, candidate.filename)
+        if candidate.in_root:
+            try:
+                os.makedirs(self.managed_dir, exist_ok=True)
+                shutil.move(os.path.join(self.ventoy_root, candidate.filename), dst)
+            except Exception as e:
+                log.error(f"Could not move {candidate.filename} into Managed_ISOs: {e}")
+                return False
+        if not os.path.exists(dst):
+            return False
+
+        found = candidate.identity
+        ck = self._free_key(found.key, found.flavor_id, candidate.filename)
+        self.items[ck] = InventoryItem(
+            key=found.key, flavor_id=found.flavor_id, display_name=display_name,
+            version=found.version, filename=candidate.filename,
+            size_bytes=os.path.getsize(dst))
+        self.excluded.discard(candidate.filename)
+        self.save()
+        return True
+
+    def release(self, ck: str, exclude: bool):
+        """Stop tracking an ISO. The file stays exactly where it is."""
+        item = self.items.pop(ck, None)
+        if item is None:
+            return
+        if exclude:
+            self.excluded.add(item.filename)
+        self.save()
+
+    def set_excluded(self, filename: str, excluded: bool):
+        """Remember that an ISO is to be left alone, or stop remembering it."""
+        if excluded:
+            self.excluded.add(filename)
+        else:
+            self.excluded.discard(filename)
+        self.save()
+
+    # -- records -----------------------------------------------------------
 
     def get_all_items(self) -> List[InventoryItem]:
         return list(self.items.values())
@@ -152,10 +262,10 @@ class InventoryManager:
     def _purge_other_entries_for_file(self, filename: str, keep_ck: str):
         """Drop stale entries that point at `filename` under a different key.
 
-        sync_filesystem() guesses a flavor_id from the filename, which need not
-        match the flavor_id a recipe later reports for the same download. Without
-        this, one ISO occupies two inventory slots and the dashboard draws two
-        cards for it - one showing a bogus 0.0 MB because it was never sized.
+        A download can land on a file that is already tracked - the second of
+        two ISOs of one distro updating to the release the first already has.
+        Without this, one ISO occupies two inventory slots and the dashboard
+        draws two cards for it.
         """
         if not filename:
             return
@@ -173,14 +283,14 @@ class InventoryManager:
         """Record an ISO, replacing the record - and the file - it supersedes.
 
         `ck` names the record to replace when that is not the distro-and-flavor
-        one: sync_filesystem() files a second ISO of the same pair under a
-        longer key, and updating it must not overwrite the first.
+        one: a second ISO of the same pair is filed under a longer key (see
+        _free_key), and updating it must not overwrite the first.
         """
         ck = ck or self._composite_key(key, flavor_id)
         old_item = self.items.get(ck)
 
         # Claim this file for `ck`, discarding any entry that tracked it before
-        # under a differently-guessed key.
+        # under a different key.
         self._purge_other_entries_for_file(filename, keep_ck=ck)
 
         if old_item and old_item.filename and old_item.filename != filename:
@@ -203,6 +313,7 @@ class InventoryManager:
             url=url
         )
         self.items[ck] = item
+        self.excluded.discard(filename)
         self.save()
 
     def remove_item(self, key: str, flavor_id: str = "", delete_file: bool = True) -> bool:
@@ -211,10 +322,9 @@ class InventoryManager:
     def remove_entry(self, ck: str, delete_file: bool = True) -> bool:
         """Remove the record stored under `ck`, an inventory key as found in `items`.
 
-        A distro and flavor do not always name one record: sync_filesystem()
-        files a second ISO that guesses to the same pair under a longer key.
-        Looking that one up by distro and flavor finds the first ISO instead,
-        and deletes its file.
+        A distro and flavor do not always name one record: a second ISO of the
+        same pair is filed under a longer key (see _free_key). Looking that one
+        up by distro and flavor finds the first ISO instead, and deletes its file.
         """
         item = self.items.get(ck)
         if not item:
@@ -233,84 +343,3 @@ class InventoryManager:
         del self.items[ck]
         self.save()
         return True
-
-
-    @staticmethod
-    def guess_distro_from_filename(filename: str) -> Dict[str, str]:
-        fn = filename.lower()
-        if "fedora" in fn:
-            flavor = "kde" if "kde" in fn else ("workstation" if "workstation" in fn else "default")
-            m = re.search(r'fedora[^\d]*(\d+)', fn)
-            v = m.group(1) if m else "Latest"
-            return {"key": "fedora", "flavor_id": flavor, "display_name": f"Fedora {v} {flavor.title()}", "version": v}
-        elif "ubuntu" in fn:
-            m = re.search(r'(\d+\.\d+(\.\d+)?)', fn)
-            v = m.group(1) if m else "Latest"
-            flavor = "desktop" if "desktop" in fn else ("server" if "server" in fn else "desktop")
-            return {"key": "ubuntu", "flavor_id": flavor, "display_name": f"Ubuntu {v} {flavor.title()}", "version": v}
-        elif "linuxmint" in fn or "mint" in fn:
-            flavor = "cinnamon" if "cinnamon" in fn else ("mate" if "mate" in fn else "xfce")
-            m = re.search(r'mint[^\d]*(\d+(\.\d+)?)', fn)
-            v = m.group(1) if m else "22"
-            return {"key": "mint", "flavor_id": flavor, "display_name": f"Linux Mint {v} {flavor.title()}", "version": v}
-        elif "arch" in fn:
-            m = re.search(r'(\d{4}\.\d{2}\.\d{2})', fn)
-            v = m.group(1) if m else "Rolling"
-            return {"key": "arch", "flavor_id": "standard", "display_name": f"Arch Linux {v}", "version": v}
-        elif "debian" in fn:
-            m = re.search(r'debian-(\d+(\.\d+)*)', fn)
-            v = m.group(1) if m else "Latest"
-            return {"key": "debian", "flavor_id": "netinst", "display_name": f"Debian {v}", "version": v}
-        elif "kali" in fn:
-            m = re.search(r'kali-linux-(\d+(\.\d+)*)', fn)
-            v = m.group(1) if m else "Rolling"
-            flavor = "live" if "live" in fn else "installer"
-            return {"key": "kali", "flavor_id": flavor, "display_name": f"Kali Linux {v} {flavor.title()}", "version": v}
-        elif "clonezilla" in fn:
-            m = re.search(r'clonezilla-live-([^\s]+)-amd64', fn)
-            v = m.group(1) if m else "Live"
-            return {"key": "clonezilla", "flavor_id": "alternative", "display_name": f"Clonezilla {v}", "version": v}
-        elif "gparted" in fn:
-            m = re.search(r'gparted-live-([\d\.\-]+)-amd64', fn)
-            v = m.group(1) if m else "Live"
-            return {"key": "gparted", "flavor_id": "standard", "display_name": f"GParted Live {v}", "version": v}
-        elif "rescuezilla" in fn:
-            m = re.search(r'rescuezilla-([\d\.]+)', fn)
-            v = m.group(1) if m else "Latest"
-            return {"key": "rescuezilla", "flavor_id": "standard", "display_name": f"Rescuezilla {v}", "version": v}
-        elif "shredos" in fn:
-            return {"key": "shredos", "flavor_id": "standard", "display_name": "ShredOS", "version": "Latest"}
-        elif "neon" in fn:
-            return {"key": "kde_neon", "flavor_id": "user", "display_name": "KDE Neon", "version": "Current"}
-        elif "pop-os" in fn or "pop_os" in fn:
-            flavor = "nvidia" if "nvidia" in fn else "intel"
-            return {"key": "popos", "flavor_id": flavor, "display_name": f"Pop!_OS ({flavor.upper()})", "version": "22.04"}
-        elif "zorin" in fn:
-            return {"key": "zorin", "flavor_id": "core", "display_name": "Zorin OS", "version": "Latest"}
-        elif "tinycore" in fn or "corepure" in fn:
-            return {"key": "tinycore", "flavor_id": "coreplus", "display_name": "Tiny Core Linux", "version": "Latest"}
-        elif "pup" in fn:
-            return {"key": "puppy", "flavor_id": "bookworm", "display_name": "Puppy Linux", "version": "Latest"}
-        elif "alpine" in fn:
-            m = re.search(r'alpine-[a-z]+-([\d\.]+)', fn) or re.search(r'(\d+\.\d+(\.\d+)?)', fn)
-            v = m.group(1) if m else "Latest"
-            flavor = "extended" if "extended" in fn else ("virt" if "virt" in fn else "standard")
-            return {"key": "alpine", "flavor_id": flavor, "display_name": f"Alpine Linux {v}", "version": v}
-        elif "endeavour" in fn:
-            m = re.search(r'(\d{4}\.\d{2}\.\d{2})', fn) or re.search(r'(\d+\.\d+)', fn)
-            v = m.group(1) if m else "Galileo"
-            return {"key": "endeavour", "flavor_id": "default", "display_name": f"EndeavourOS {v}", "version": v}
-        elif "manjaro" in fn:
-            flavor = "kde" if "kde" in fn else ("gnome" if "gnome" in fn else "xfce")
-            m = re.search(r'manjaro-[a-z]+-([\d\.]+)', fn) or re.search(r'(\d+\.\d+(\.\d+)?)', fn)
-            v = m.group(1) if m else "Latest"
-            return {"key": "manjaro", "flavor_id": flavor, "display_name": f"Manjaro {v} {flavor.upper()}", "version": v}
-        elif "parrot" in fn:
-            flavor = "home" if "home" in fn else "security"
-            m = re.search(r'parrot-[a-z]+-([\d\.]+)', fn) or re.search(r'(\d+\.\d+)', fn)
-            v = m.group(1) if m else "6.0"
-            return {"key": "parrot", "flavor_id": flavor, "display_name": f"Parrot OS {v} {flavor.title()}", "version": v}
-        
-        clean = filename.replace(".iso", "").replace("-", " ").replace("_", " ").title()
-        return {"key": "custom", "flavor_id": "default", "display_name": clean, "version": "Manual"}
-

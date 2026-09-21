@@ -686,6 +686,13 @@ def test_cancel_while_starting_does_not_start_the_download(workspace, qapp, tmp_
     assert ck not in ws.library.active_tasks
 
 
+def _adopt_everything(ws):
+    """Say yes to every candidate, the way the adoption dialog would."""
+    from src.ui.adopt_dialog import ADOPT
+    candidates = ws.library._adoptable()
+    ws.library._apply_adoption(candidates, {c.filename: ADOPT for c in candidates})
+
+
 def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp_path, monkeypatch):
     """Regression: with two ISOs of one distro on the drive, Remove on the
     second row asked about the second and then deleted the first."""
@@ -698,12 +705,11 @@ def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp
     second = managed / "archlinux-2026.09.01-x86_64.iso"
     first.write_bytes(b"iso")
     second.write_bytes(b"iso")
-    ws.library.inventory_mgr.sync_filesystem()
-    ws.library.refresh_installed_list()
+    _adopt_everything(ws)
     assert len(ws.library.cards) == 2
 
-    monkeypatch.setattr(QMessageBox, "question",
-                        lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    from src.ui.dashboard import DashboardView
+    monkeypatch.setattr(DashboardView, "_ask_removal", lambda self, item: "delete")
     card = next(c for c in ws.library.cards.values() if c.item.filename == second.name)
     card.btn_remove.click()
     qapp.processEvents()
@@ -715,7 +721,7 @@ def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp
 
 @pytest.fixture
 def two_arch_isos(workspace, qapp, tmp_path):
-    """Two ISOs that both guess to arch::standard; the second gets a longer key."""
+    """Two ISOs that are both arch::standard; the second gets a longer key."""
     ws = workspace
     managed = tmp_path / "Managed_ISOs"
     managed.mkdir(exist_ok=True)
@@ -723,8 +729,7 @@ def two_arch_isos(workspace, qapp, tmp_path):
     second = managed / "archlinux-2026.09.01-x86_64.iso"
     first.write_bytes(b"iso")
     second.write_bytes(b"iso")
-    ws.library.inventory_mgr.sync_filesystem()
-    ws.library.refresh_installed_list()
+    _adopt_everything(ws)
     qapp.processEvents()
     keys = {c.item.filename: ck for ck, c in ws.library.cards.items()}
     return ws, first, second, keys[first.name], keys[second.name]
@@ -804,6 +809,137 @@ def test_two_rows_cannot_download_the_same_file_at_once(two_arch_isos, qapp, tmp
     assert lib.cards[first_ck].is_downloading
 
 
+# ------------------------------------------------------------- adoption
+
+@pytest.fixture
+def drive_with_loose_isos(workspace, qapp, tmp_path):
+    """The kind of drive that prompted this: official ISOs next to a customised
+    Clonezilla and images the catalog knows nothing about."""
+    ws = workspace
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    for name in ("archlinux-2026.05.01-x86_64.iso",
+                 "clonezilla-live-20260705-resolute-amd64.iso",
+                 "clonezilla-live-galaxybook-20260808.iso",
+                 "Win11_25H2_English_x64.iso"):
+        (managed / name).write_bytes(b"iso")
+    (tmp_path / "debian-13.4.0-amd64-netinst.iso").write_bytes(b"iso")
+    ws.library.refresh_installed_list()
+    qapp.processEvents()
+    return ws
+
+
+def test_nothing_is_adopted_without_being_asked(drive_with_loose_isos):
+    """Regression: every ISO found became a row - rows nothing could update,
+    and a customised Clonezilla offered an update that would overwrite it."""
+    lib = drive_with_loose_isos.library
+
+    assert lib.cards == {}
+    assert not lib.btn_adopt.isHidden()
+    assert lib.btn_adopt.text() == "Adopt ISOs (3)"
+
+
+def test_adoption_dialog_offers_only_what_the_catalog_can_update(drive_with_loose_isos):
+    from src.ui.adopt_dialog import AdoptDialog
+
+    lib = drive_with_loose_isos.library
+    candidates = lib._adoptable(include_excluded=True)
+    dialog = AdoptDialog(candidates, {c.filename: lib._display_name(c) for c in candidates})
+
+    offered = sorted(row.candidate.filename for row in dialog.rows)
+    assert offered == ["archlinux-2026.05.01-x86_64.iso",
+                       "clonezilla-live-20260705-resolute-amd64.iso",
+                       "debian-13.4.0-amd64-netinst.iso"]
+    assert all(choice == "" for choice in dialog.choices().values()), "an answer was pre-selected"
+
+    row = dialog.rows[0]
+    row.btn_adopt.click()
+    assert row.choice() == "adopt"
+    row.btn_exclude.click()
+    assert row.choice() == "exclude", "both answers were left pressed"
+    row.btn_exclude.click()
+    assert row.choice() == ""
+
+
+def test_adopting_and_excluding_from_the_dialog(drive_with_loose_isos, qapp, tmp_path):
+    from src.ui.adopt_dialog import ADOPT, EXCLUDE
+
+    lib = drive_with_loose_isos.library
+    clonezilla = "clonezilla-live-20260705-resolute-amd64.iso"
+    lib._apply_adoption(lib._adoptable(), {
+        "archlinux-2026.05.01-x86_64.iso": ADOPT,
+        "debian-13.4.0-amd64-netinst.iso": ADOPT,
+        clonezilla: EXCLUDE,
+    })
+    qapp.processEvents()
+
+    assert sorted(lib.cards) == ["arch::standard", "debian::netinst"]
+    assert lib.cards["arch::standard"].item.version == "2026.05.01"
+    assert (tmp_path / "Managed_ISOs" / "debian-13.4.0-amd64-netinst.iso").exists()
+    assert (tmp_path / "Managed_ISOs" / clonezilla).exists(), "an excluded ISO was removed"
+
+    # Nothing is waiting, but the dialog stays reachable to undo the exclusion.
+    assert lib.btn_adopt.text() == "Excluded ISOs"
+    assert not lib.btn_adopt.isHidden()
+    assert [c.filename for c in lib._adoptable(include_excluded=True)] == [clonezilla]
+
+    # The three that are left alone are mentioned once, not given rows.
+    assert not lib.lbl_unmanaged.isHidden()
+    assert lib.lbl_unmanaged.text().startswith("3 other ISOs")
+    assert "galaxybook" in lib.lbl_unmanaged.toolTip()
+
+
+def test_adopted_isos_are_not_offered_for_adoption_again(drive_with_loose_isos, qapp, monkeypatch):
+    """Regression: the dialog also listed what had already been adopted, so
+    opening it after adopting showed the same ISOs again, as if it had not taken."""
+    from src.ui import dashboard
+
+    lib = drive_with_loose_isos.library
+    _adopt_everything(drive_with_loose_isos)
+    assert len(lib.cards) == 3
+
+    assert lib.btn_adopt.isHidden(), "nothing is waiting and nothing is excluded"
+    opened = []
+    monkeypatch.setattr(dashboard, "AdoptDialog", lambda *a, **kw: opened.append(a))
+    lib._open_adopt_dialog()
+    assert opened == []
+
+
+def test_remove_can_keep_the_file_and_stop_managing_it(drive_with_loose_isos, qapp, tmp_path, monkeypatch):
+    """Deleting was the only way off the list - no way out for a customised
+    ISO under an official name, or one adopted by mistake."""
+    from src.ui.dashboard import DashboardView
+
+    lib = drive_with_loose_isos.library
+    _adopt_everything(drive_with_loose_isos)
+    monkeypatch.setattr(DashboardView, "_ask_removal", lambda self, item: "release")
+
+    lib.cards["arch::standard"].btn_remove.click()
+    qapp.processEvents()
+
+    assert sorted(lib.cards) == ["clonezilla::alternative", "debian::netinst"]
+    assert (tmp_path / "Managed_ISOs" / "archlinux-2026.05.01-x86_64.iso").exists()
+    # Left alone for good, and the way back is labelled for what it holds.
+    assert lib._adoptable() == []
+    assert lib.btn_adopt.text() == "Excluded ISOs"
+    assert not lib.btn_adopt.isHidden()
+
+
+def test_adopt_all_respects_an_exclusion(drive_with_loose_isos):
+    from src.ui.adopt_dialog import AdoptDialog
+
+    lib = drive_with_loose_isos.library
+    lib.inventory_mgr.set_excluded("clonezilla-live-20260705-resolute-amd64.iso", True)
+    candidates = lib._adoptable(include_excluded=True)
+    dialog = AdoptDialog(candidates, {})
+
+    dialog.btn_all.click()
+
+    choices = dialog.choices()
+    assert choices["clonezilla-live-20260705-resolute-amd64.iso"] == "exclude"
+    assert choices["archlinux-2026.05.01-x86_64.iso"] == "adopt"
+
+
 # ------------------------------------------------------ check all updates
 
 @pytest.fixture
@@ -878,8 +1014,11 @@ def test_check_all_leaves_a_row_that_is_updating_alone(held_checks, installed, q
 
 def test_row_without_a_recipe_does_not_hang_check_all(installed, qapp, tmp_path):
     ws = installed
-    (tmp_path / "Managed_ISOs" / "my-own-build.iso").write_bytes(b"iso")
-    ws.library.inventory_mgr.sync_filesystem()
+    # A record whose recipe has since left the catalog.
+    (tmp_path / "Managed_ISOs" / "retired.iso").write_bytes(b"iso")
+    ws.library.inventory_mgr.add_or_update(
+        key="custom", flavor_id="default", display_name="Retired", version="1",
+        filename="retired.iso", url="https://example.invalid/retired.iso")
     ws.library.refresh_installed_list()
     custom = ws.library.cards["custom::default"]
 

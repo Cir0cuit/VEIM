@@ -15,6 +15,7 @@ import time
 import pytest
 import requests
 
+from src.core.iso_identity import identify
 from src.core.recipe_base import ScrapeError
 from src.recipes.registry import registry
 
@@ -23,6 +24,20 @@ pytestmark = pytest.mark.network
 TIMEOUT = 30
 HEADERS = {"User-Agent": "curl/8.4.0"}
 ALL = registry.get_all_recipes()
+
+
+def _misidentified(recipe, flavor_id, info) -> str:
+    """Why adoption would get this download wrong, or "" if it would not.
+
+    A name the rules do not know is fine - that ISO is simply never offered.
+    A name they read as a different flavor or version is not: the adopted row
+    would report an update forever, or fetch the wrong edition.
+    """
+    found = identify(info.filename or "")
+    expected = (recipe.key, flavor_id, info.version)
+    if found is None or (found.key, found.flavor_id, found.version) == expected:
+        return ""
+    return f"{info.filename} is read as {found}, but the recipe says {expected}"
 
 
 def _reachable(url: str) -> tuple:
@@ -53,6 +68,8 @@ def test_first_flavor_resolves_to_a_live_url(recipe):
     assert info.url, f"{recipe.key} returned no URL"
     assert info.version and info.version != "Unknown", f"{recipe.key} returned no version"
 
+    assert not _misidentified(recipe, flavors[0].id, info)
+
     ok, detail = _reachable(info.url)
     assert ok, f"{recipe.key} -> {info.url} unreachable ({detail})"
 
@@ -66,6 +83,9 @@ def _check(job):
         return f"{recipe.key}/{flavor.id}: {e.reason}"
     except Exception as e:
         return f"{recipe.key}/{flavor.id}: {type(e).__name__}: {e}"
+    wrong = _misidentified(recipe, flavor.id, info)
+    if wrong:
+        return f"{recipe.key}/{flavor.id}: {wrong}"
     ok, detail = _reachable(info.url)
     return None if ok else f"{recipe.key}/{flavor.id}: {detail} for {info.url}"
 
