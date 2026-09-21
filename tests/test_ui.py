@@ -144,6 +144,43 @@ def test_installed_row_surfaces_unavailable_distinctly(themed):
     assert card.btn_update.isHidden()
 
 
+def test_installed_row_never_offers_a_downgrade(themed):
+    """Regression: any different version counted as an update. The Tiny Core
+    recipe was stuck on 15.0, so a drive holding 16.2 was offered "Update to
+    15.0" - and the button would have replaced the newer ISO with the older."""
+    from src.ui.distro_card import DistroCard
+    card = DistroCard(_item(key="tinycore", flavor_id="corepure64", version="16.2"),
+                      lambda *a: None, lambda *a: None, lambda *a: None)
+    card.show()
+    card.set_status_result("15.0", "https://example.invalid/CorePure64-15.0.iso")
+
+    assert card.btn_update.isHidden(), "a downgrade was offered as an update"
+    assert not card.update_available
+    assert card.status.text() == "Newer than 15.0"
+
+    # And the real thing is still an update.
+    card.set_status_result("17.1", "https://example.invalid/CorePure64-17.1.iso")
+    assert not card.btn_update.isHidden()
+    assert card.status.text() == "Update to 17.1"
+
+
+@pytest.mark.parametrize("latest,installed,older", [
+    ("15.0", "16.2", True),
+    ("10.0.9", "10.0.12", True),                 # not by text, where "9" > "1"
+    ("20260705-resolute", "20260913-resolute", True),
+    ("44 (2026-08-01)", "44 (2026-09-02)", True),
+    ("18", "18.1", True),
+    ("17.1", "16.2", False),
+    ("16.2", "16.2", False),
+    ("2026.2a", "2026.2", False),                # same numbers: left to inequality
+    ("Tumbleweed", "Tumbleweed", False),         # nothing to compare
+    ("Stable", "44", False),
+])
+def test_is_older(latest, installed, older):
+    from src.core.recipe_base import is_older
+    assert is_older(latest, installed) is older
+
+
 # ----------------------------------------------------------------- catalog
 
 def test_catalog_lists_every_recipe(themed):

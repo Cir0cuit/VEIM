@@ -56,6 +56,20 @@ def clean_version(version: str) -> str:
     return v or "Unknown"
 
 
+def is_older(candidate: str, installed: str) -> bool:
+    """True when `candidate` is recognisably an earlier release than `installed`.
+
+    A check compares what a recipe reports with what is on the drive, and used
+    to call any difference an update. A recipe that falls behind upstream then
+    offers a downgrade as if it were news. Versions are compared by the numbers
+    in them; when that settles nothing ("Tumbleweed", "Stable"), the answer is
+    False and the caller is left with plain inequality.
+    """
+    ours = tuple(int(n) for n in re.findall(r'\d+', str(installed)))
+    theirs = tuple(int(n) for n in re.findall(r'\d+', str(candidate)))
+    return bool(ours) and bool(theirs) and theirs < ours
+
+
 @dataclass
 class FlavorInfo:
     id: str

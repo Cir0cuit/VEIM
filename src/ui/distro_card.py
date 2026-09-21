@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QProgressBar
 
 from src.core.inventory import InventoryItem
 from src.core.downloader import DownloadTask
+from src.core.recipe_base import is_older
 from src.ui.components import Row, Pill, make_button, fmt_eta
 from src.ui.theme import ThemeColors
 
@@ -100,17 +101,27 @@ class DistroCard(Row):
         return self._downloading
 
     @property
+    def _answered(self) -> bool:
+        return bool(self._latest_ver) and self._latest_ver not in self.CHECK_FAILURES
+
+    @property
+    def is_ahead(self) -> bool:
+        """The drive holds a later release than the catalog found.
+
+        Either the recipe has fallen behind upstream or this is a pre-release.
+        Whichever it is, offering the catalog's version would be a downgrade.
+        """
+        return self._answered and is_older(self._latest_ver, self.item.version)
+
+    @property
     def update_available(self) -> bool:
-        return (bool(self._latest_ver)
-                and self._latest_ver not in self.CHECK_FAILURES
+        return (self._answered and not self.is_ahead
                 and self._latest_ver.strip() != str(self.item.version).strip())
 
     @property
     def is_up_to_date(self) -> bool:
-        """A check answered, and with the version already on the drive."""
-        return (bool(self._latest_ver)
-                and self._latest_ver not in self.CHECK_FAILURES
-                and not self.update_available)
+        """A check answered, and with nothing newer than what is on the drive."""
+        return self._answered and not self.update_available
 
     # -- callbacks --------------------------------------------------------
 
@@ -224,6 +235,8 @@ class DistroCard(Row):
             return self.CHECK_FAILURES[self._latest_ver], "warn"
         if self.update_available:
             return f"Update to {self._latest_ver}", "warn"
+        if self.is_ahead:
+            return f"Newer than {self._latest_ver}", "neutral"
         return "Up to date", "ok"
 
     @staticmethod
