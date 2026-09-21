@@ -100,7 +100,7 @@ all at once, and gives each row one of three answers:
 | | |
 |---|---|
 | **Up to date** | The installed version matches what the project publishes now. |
-| **Update to 44** | A newer release exists, and the row names it. It grows an **Update** button that downloads the new version and replaces the old file. |
+| **Update to 44** | A newer release exists, and the row names it. It grows an **Update** button that downloads the new version and replaces the old file; the row itself shows the progress and a **Cancel** button while it does. |
 | **No current release** | The current version could not be worked out — a mirror is down, or a download page has changed. Deliberately *not* reported as up to date. |
 
 Individual rows can be checked on their own with **Check**. An update is just a

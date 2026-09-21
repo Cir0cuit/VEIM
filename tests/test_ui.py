@@ -515,6 +515,265 @@ def test_completed_download_marks_the_row_installed(workspace, qapp, tmp_path):
     assert not row.badge.isHidden(), "the Installed badge did not appear"
 
 
+# ------------------------------------------- updating an installed ISO
+
+@pytest.fixture
+def installed(workspace, qapp, tmp_path):
+    """The workspace with Arch and Debian already on the drive."""
+    ws = workspace
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    for key, flavor, name, version, fname in (
+        ("arch", "standard", "Arch Linux", "2026.09.01", "archlinux-2026.09.01-x86_64.iso"),
+        ("debian", "netinst", "Debian Netinst", "13.1.0", "debian-13.1.0-amd64-netinst.iso"),
+    ):
+        (managed / fname).write_bytes(b"iso")
+        ws.library.inventory_mgr.add_or_update(
+            key=key, flavor_id=flavor, display_name=name, version=version,
+            filename=fname, size_bytes=3)
+    ws.library.refresh_installed_list()
+    qapp.processEvents()
+    return ws
+
+
+def _update(ws, qapp, ck="arch::standard", latest="2026.10.01"):
+    """Find an update for a row and press its Update button."""
+    card = ws.library.cards[ck]
+    card.set_status_result(latest, "https://example.invalid/new.iso")
+    card.btn_update.click()
+    qapp.processEvents()
+    return card
+
+
+def test_update_progress_stays_on_the_row_being_updated(installed, qapp):
+    """Regression: an update ran in a new row pinned to the top of the page,
+    while the row it belonged to sat unchanged, still offering "Update"."""
+    ws = installed
+    card = _update(ws, qapp)
+
+    assert ws.library.download_cards == {}, "the update got a separate row"
+    assert ws.library.lbl_downloads.isHidden()
+    assert card.is_downloading
+    assert not card.progress.isHidden()
+    assert card.btn_update.isHidden(), "still offering the update that is running"
+    assert card.btn_remove.isHidden()
+    assert not card.btn_cancel.isHidden(), "no way to stop the update"
+
+    ws.library._on_progress_slot("arch::standard", _progress(231, 700))
+    assert card.progress.value() == 33
+    assert "33%" in card.meta.text()
+
+    # The other row is not involved.
+    assert not ws.library.cards["debian::netinst"].is_downloading
+
+
+def test_finished_update_returns_the_row_to_normal(installed, qapp, tmp_path):
+    ws = installed
+    card = _update(ws, qapp)
+
+    iso = tmp_path / "Managed_ISOs" / "archlinux-2026.10.01-x86_64.iso"
+    iso.write_bytes(b"newer iso")
+    task = DownloadTask("https://example.invalid/new.iso", str(iso))
+    task._distro_meta = dict(key="arch", flavor_id="standard", display_name="Arch Linux",
+                             version="2026.10.01", filename=iso.name, sha256="",
+                             url="https://example.invalid/new.iso")
+    ws.library.active_tasks["arch::standard"] = task
+    ws.library._on_complete_slot("arch::standard", True, "Success")
+    qapp.processEvents()
+
+    assert ws.library.cards["arch::standard"] is card, "the row was rebuilt"
+    assert not card.is_downloading
+    assert card.progress.isHidden()
+    assert card.status.text() == "Updated"
+    assert "2026.10.01" in card.meta.text()
+    assert card.btn_update.isHidden()
+    assert not card.btn_remove.isHidden()
+
+
+def test_cancelled_update_offers_the_update_again(installed, qapp):
+    ws = installed
+    card = _update(ws, qapp)
+
+    card.btn_cancel.click()
+    qapp.processEvents()
+
+    assert "arch::standard" not in ws.library.active_tasks
+    assert not card.is_downloading
+    assert card.progress.isHidden()
+    assert "2026.10.01" in card.status.text()
+    assert not card.btn_update.isHidden()
+    assert "2026.09.01" in card.meta.text()
+
+
+def test_failed_update_says_why_on_its_row(installed, qapp):
+    ws = installed
+    card = _update(ws, qapp)
+
+    ws.library._on_complete_slot("arch::standard", False, "Mirror timed out")
+    qapp.processEvents()
+
+    assert not card.is_downloading
+    assert card.status.text() == "Download failed"
+    assert "Mirror timed out" in card.meta.text()
+    assert not card.btn_update.isHidden(), "a failed update cannot be retried"
+
+    # Using the row again clears the message.
+    card.btn_update.click()
+    qapp.processEvents()
+    assert card.is_downloading
+    assert "Mirror timed out" not in card.meta.text()
+
+
+def test_one_finished_download_keeps_other_rows_check_results(installed, qapp, tmp_path):
+    """Regression: every completion rebuilt the whole list, which wiped the
+    "Update to ..." pill and the Update button from every other row."""
+    ws = installed
+    arch = ws.library.cards["arch::standard"]
+    arch.set_status_result("2026.10.01", "https://example.invalid/new.iso")
+
+    ws.catalog.rows["fedora"]._on_button()
+    qapp.processEvents()
+    assert ws.library.cards["arch::standard"] is arch
+    ck = next(iter(ws.library.download_cards))
+    ws.library._cancel_download(ck)
+    qapp.processEvents()
+
+    assert ws.library.cards["arch::standard"] is arch
+    assert "2026.10.01" in arch.status.text()
+    assert not arch.btn_update.isHidden()
+
+
+def test_failed_download_can_be_retried_from_the_catalog(workspace, qapp):
+    """Regression: the failed row kept hold of the key until it was dismissed,
+    so pressing Download again did nothing at all."""
+    ws = workspace
+    row = ws.catalog.rows["debian"]
+    ck = ws.library.inventory_mgr._composite_key("debian", row.current_flavor())
+
+    row._on_button()
+    qapp.processEvents()
+    ws.library._on_error_slot(ck, "mirror timed out")
+    qapp.processEvents()
+    failed = ws.library.download_cards[ck]
+
+    row._on_button()
+    qapp.processEvents()
+
+    assert row.is_downloading(row.current_flavor()), "the retry was ignored"
+    assert ws.library.download_cards[ck] is not failed
+    assert ws.library.download_layout.count() == 1
+
+
+def test_cancel_while_starting_does_not_start_the_download(workspace, qapp, tmp_path):
+    """Regression: cancelling during "Starting…" removed the row, and the
+    worker then started the transfer anyway, with nothing left to stop it."""
+    ws = workspace
+    row = ws.catalog.rows["debian"]
+    ck = ws.library.inventory_mgr._composite_key("debian", row.current_flavor())
+
+    row._on_button()
+    qapp.processEvents()
+    token = ws.library._download_tokens[ck]
+    row._on_button()          # Cancel
+    qapp.processEvents()
+
+    started = []
+    task = DownloadTask("https://example.invalid/d.iso", str(tmp_path / "d.iso"))
+    task.start_async = lambda **kw: started.append(kw)
+    ws.library._on_ready_slot(ck, token, task)
+
+    assert started == []
+    assert ck not in ws.library.active_tasks
+
+
+# ------------------------------------------------------ check all updates
+
+@pytest.fixture
+def held_checks(monkeypatch):
+    """Update checks that wait to be answered by the test."""
+    from src.ui.dashboard import DashboardView
+
+    asked = []
+    monkeypatch.setattr(
+        DashboardView, "_handle_single_check",
+        lambda self, item, card: asked.append(self._key_of(card)))
+    return asked
+
+
+def test_check_all_shows_that_it_is_checking(held_checks, installed, qapp):
+    ws = installed
+    lib = ws.library
+
+    lib.btn_check_all.click()
+    qapp.processEvents()
+
+    assert sorted(held_checks) == ["arch::standard", "debian::netinst"]
+    assert lib.btn_check_all.text() == "Checking…"
+    assert not lib.btn_check_all.isEnabled()
+    for card in lib.cards.values():
+        assert card.status.text() == "Checking…"
+        assert not card.btn_check.isEnabled()
+
+    lib._on_check_slot("arch::standard", "2026.10.01", "https://example.invalid/a.iso")
+    assert lib.btn_check_all.text() == "Checking…", "one row is still waiting"
+
+    lib._on_check_slot("debian::netinst", "13.1.0", "https://example.invalid/d.iso")
+    assert lib.btn_check_all.text() == "Check All Updates"
+    assert lib.btn_check_all.isEnabled()
+    assert "1 update available" in lib.subtitle.text()
+
+
+def test_checking_all_again_visibly_checks_again(held_checks, installed, qapp):
+    """Regression: a second press left every row reading "Up to date"
+    throughout, so there was no sign that anything had been asked."""
+    ws = installed
+    lib = ws.library
+
+    lib.btn_check_all.click()
+    lib._on_check_slot("arch::standard", "2026.09.01", "")
+    lib._on_check_slot("debian::netinst", "13.1.0", "")
+    assert all(c.status.text() == "Up to date" for c in lib.cards.values())
+    assert "all up to date" in lib.subtitle.text()
+
+    del held_checks[:]
+    lib.btn_check_all.click()
+    qapp.processEvents()
+
+    assert len(held_checks) == 2, "the second press did not check anything"
+    assert all(c.status.text() == "Checking…" for c in lib.cards.values())
+    assert lib.btn_check_all.text() == "Checking…"
+
+
+def test_check_all_leaves_a_row_that_is_updating_alone(held_checks, installed, qapp):
+    ws = installed
+    card = _update(ws, qapp)
+
+    ws.library.btn_check_all.click()
+    qapp.processEvents()
+
+    assert held_checks == ["debian::netinst"]
+    assert card.is_downloading
+
+    ws.library._on_check_slot("debian::netinst", "13.1.0", "")
+    assert ws.library.btn_check_all.isEnabled(), "still waiting on a row it never asked"
+
+
+def test_row_without_a_recipe_does_not_hang_check_all(installed, qapp, tmp_path):
+    ws = installed
+    (tmp_path / "Managed_ISOs" / "my-own-build.iso").write_bytes(b"iso")
+    ws.library.inventory_mgr.sync_filesystem()
+    ws.library.refresh_installed_list()
+    custom = ws.library.cards["custom::default"]
+
+    # Only the row with no recipe: it answers on the spot, no thread involved.
+    ws.library._pending_checks.add("custom::default")
+    custom.start_check()
+
+    assert custom.status.text() == "Check failed"
+    assert ws.library.btn_check_all.text() == "Check All Updates"
+    assert ws.library.btn_check_all.isEnabled()
+
+
 # ------------------------------------------------------------- dropdowns
 
 def _open(combo, qapp):

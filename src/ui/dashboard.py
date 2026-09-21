@@ -32,14 +32,23 @@ class DashboardWorkerBridge(QObject):
     Thread-safe signal bridge marshaling events from background worker threads
     directly onto the main Qt event loop.
     """
+    ready_signal = Signal(str, object, object)    # composite_key, token, DownloadTask
     progress_signal = Signal(str, object)         # composite_key, DownloadTask
     complete_signal = Signal(str, bool, str)      # composite_key, success, msg
     check_signal = Signal(str, str, str)          # composite_key, version, url
     error_signal = Signal(str, str)               # composite_key, error_msg
 
 
+CHECK_ALL_TEXT = "Check All Updates"
+CHECK_ALL_BUSY_TEXT = "Checking…"
+
+
 class DashboardView(QWidget):
-    """Library page: active downloads on top, installed ISOs below."""
+    """Library page: new downloads on top, installed ISOs below.
+
+    A transfer that replaces an ISO already on the drive is shown on that ISO's
+    own row; only a distribution with no row yet gets one under DOWNLOADING.
+    """
 
     drive_changed = Signal()          # ask the shell to re-read drive stats
     browse_catalog = Signal()         # ask the shell to switch to the catalog
@@ -63,8 +72,15 @@ class DashboardView(QWidget):
         # Composite key -> (distro key, flavor id), so a progress or completion
         # event can be reported back in terms the catalog understands.
         self.download_targets: Dict[str, tuple] = {}
+        # Composite key -> identity of the transfer currently allowed to use
+        # it. A worker still resolving a recipe after its transfer was
+        # cancelled holds a token that no longer matches, and is ignored.
+        self._download_tokens: Dict[str, object] = {}
+        # Rows a "Check All Updates" is still waiting on.
+        self._pending_checks: set = set()
 
         self.bridge = DashboardWorkerBridge(self)
+        self.bridge.ready_signal.connect(self._on_ready_slot)
         self.bridge.progress_signal.connect(self._on_progress_slot)
         self.bridge.complete_signal.connect(self._on_complete_slot)
         self.bridge.check_signal.connect(self._on_check_slot)
@@ -103,7 +119,7 @@ class DashboardView(QWidget):
         self.btn_adopt.hide()
         header.addWidget(self.btn_adopt)
 
-        self.btn_check_all = make_button("Check All Updates", "ghost", self._handle_check_all)
+        self.btn_check_all = make_button(CHECK_ALL_TEXT, "ghost", self._handle_check_all)
         header.addWidget(self.btn_check_all)
 
         self.btn_add = make_button("Add Distribution", "primary", self.browse_catalog.emit)
@@ -211,50 +227,55 @@ class DashboardView(QWidget):
     # ------------------------------------------------------------- listing
 
     def refresh_installed_list(self):
-        self.cards.clear()
-        while self.installed_layout.count():
-            item = self.installed_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                # deleteLater() is deferred, and a widget that has only been removed
-                # from its layout keeps painting at its old geometry until then.
-                w.hide()
-                w.deleteLater()
+        """Bring the rows in line with the inventory.
 
-        items = self.inventory_mgr.get_all_items()
+        Rows are kept, not rebuilt: a row holds the answer to its last check
+        and any transfer running on it, and rebuilding the list whenever one
+        download finished wiped both from every other row.
+        """
+        # Keyed the way the inventory keys them, so two ISOs that guess to the
+        # same distro and flavor still get a row - and a check result - each.
+        records = dict(self.inventory_mgr.items)
+
+        for ck in [k for k in self.cards if k not in records]:
+            card = self.cards.pop(ck)
+            self.installed_layout.removeWidget(card)
+            # deleteLater() is deferred, and a widget that has only been removed
+            # from its layout keeps painting at its old geometry until then.
+            card.hide()
+            card.deleteLater()
+            self._pending_checks.discard(ck)
+
+        for index, (ck, it) in enumerate(records.items()):
+            card = self.cards.get(ck)
+            if card is None:
+                card = DistroCard(
+                    item=it,
+                    on_check_update=self._handle_single_check,
+                    on_download=self._handle_single_download,
+                    on_remove=self._handle_single_remove,
+                    on_cancel=self._handle_single_cancel,
+                )
+                self.cards[ck] = card
+            else:
+                card.set_item(it)
+            if self.installed_layout.indexOf(card) != index:
+                self.installed_layout.removeWidget(card)
+                self.installed_layout.insertWidget(index, card)
+
         has_downloads = bool(self.download_cards)
-
         self.lbl_downloads.setVisible(has_downloads)
-        self.lbl_installed.setVisible(bool(items))
+        self.lbl_installed.setVisible(bool(records))
 
-        if not items and not has_downloads:
+        if not records and not has_downloads:
             self.empty_container.show()
             self.scroll.hide()
-            self.btn_check_all.setEnabled(False)
         else:
             self.empty_container.hide()
             self.scroll.show()
-            self.btn_check_all.setEnabled(bool(items))
 
-        for it in items:
-            card = DistroCard(
-                item=it,
-                on_check_update=self._handle_single_check,
-                on_download=self._handle_single_download,
-                on_remove=self._handle_single_remove,
-            )
-            self.installed_layout.addWidget(card)
-            ck = self.inventory_mgr._composite_key(it.key, it.flavor_id)
-            self.cards[ck] = card
-
-        total_gb = sum(i.size_bytes for i in items) / (1024 ** 3)
-        count = len(items)
-        if count:
-            self.subtitle.setText(
-                f"{count} distribution{'s' if count != 1 else ''}  ·  {total_gb:.1f} GB on drive"
-            )
-        else:
-            self.subtitle.setText("Nothing installed yet")
+        self._sync_check_all()
+        self._refresh_subtitle()
 
         root_isos = self._find_root_isos()
         if root_isos:
@@ -264,6 +285,38 @@ class DashboardView(QWidget):
             self.btn_adopt.hide()
 
         self.drive_changed.emit()
+
+    def _refresh_subtitle(self):
+        items = self.inventory_mgr.get_all_items()
+        count = len(items)
+        if not count:
+            self.subtitle.setText("Nothing installed yet")
+            return
+
+        total_gb = sum(i.size_bytes for i in items) / (1024 ** 3)
+        bits = [f"{count} distribution{'s' if count != 1 else ''}",
+                f"{total_gb:.1f} GB on drive"]
+
+        # What the checks found, so the answer to "Check All Updates" can be
+        # read in one place instead of by scrolling the list.
+        updates = sum(1 for c in self.cards.values()
+                      if c.update_available and not c.is_checking)
+        if any(c.is_checking for c in self.cards.values()):
+            pass        # an answer being re-asked is not one to summarise yet
+        elif updates:
+            bits.append(f"{updates} update{'s' if updates != 1 else ''} available")
+        elif self.cards and all(c.is_up_to_date for c in self.cards.values()):
+            bits.append("all up to date")
+        self.subtitle.setText("  ·  ".join(bits))
+
+    def _sync_check_all(self):
+        """The header button is its own busy indicator, like each row's pill."""
+        busy = bool(self._pending_checks)
+        if busy and self.btn_check_all.isVisible():
+            # Hold the width so the shorter label does not shift the header.
+            self.btn_check_all.setMinimumWidth(self.btn_check_all.width())
+        self.btn_check_all.setText(CHECK_ALL_BUSY_TEXT if busy else CHECK_ALL_TEXT)
+        self.btn_check_all.setEnabled(not busy and bool(self.cards))
 
     def installed_flavors(self, key: str) -> set:
         """Flavor ids already installed for a distro (used by the catalog)."""
@@ -280,40 +333,56 @@ class DashboardView(QWidget):
         dname = f"{recipe.name} {flavor_name}"
         ck = self.inventory_mgr._composite_key(recipe.key, flavor_id)
 
-        if ck in self.download_cards:
+        if ck in self.active_tasks:
             # Already running; the row is showing its progress already.
             return
+        # A failed attempt stays on screen until dismissed. Asking again is a
+        # retry, and used to be swallowed because that row still held the key.
+        self._remove_download_card(ck)
 
         self.download_targets[ck] = (recipe.key, flavor_id)
+        self.active_tasks[ck] = None
+        token = self._download_tokens[ck] = object()
         self.download_started.emit(recipe.key, flavor_id)
 
-        card = DownloadingCard(
-            key=recipe.key,
-            distro_name=recipe.name,
-            flavor_name=flavor_name,
-            on_cancel=lambda k=ck: self._cancel_download(k),
-        )
-        self.download_cards[ck] = card
-        self.download_layout.addWidget(card)
-        self.active_tasks[ck] = None
+        row = self.cards.get(ck)
+        if row is not None:
+            # Replacing an ISO that has a row: the row is the progress display.
+            row.begin_download()
+        else:
+            card = DownloadingCard(
+                key=recipe.key,
+                distro_name=recipe.name,
+                flavor_name=flavor_name,
+                on_cancel=lambda k=ck: self._cancel_download(k),
+            )
+            self.download_cards[ck] = card
+            self.download_layout.addWidget(card)
 
-        self.lbl_downloads.show()
-        self.empty_container.hide()
-        self.scroll.show()
+            self.lbl_downloads.show()
+            self.empty_container.hide()
+            self.scroll.show()
 
         threading.Thread(
             target=self._worker_fetch_and_start_download,
-            args=(recipe, flavor_id, flavor_name, dname, ck),
+            args=(recipe, flavor_id, flavor_name, dname, ck, token),
             daemon=True,
         ).start()
 
+    def _report_setup_error(self, ck: str, token: object, message: str):
+        """Worker thread: a transfer cancelled meanwhile has nowhere to say it."""
+        if self._download_tokens.get(ck) is token:
+            self.bridge.error_signal.emit(ck, message)
+
     def _worker_fetch_and_start_download(self, recipe: DistroRecipe, flavor_id: str,
-                                         flavor_name: str, dname: str, ck: str):
+                                         flavor_name: str, dname: str, ck: str,
+                                         token: object = None):
         try:
             log.info(f"Fetching download info for {recipe.name} ({flavor_id})...")
             info = recipe.fetch_download_info(flavor_id)
             if not info.url:
-                self.bridge.error_signal.emit(ck, f"Could not resolve download URL for {recipe.name}")
+                self._report_setup_error(ck, token,
+                                         f"Could not resolve download URL for {recipe.name}")
                 return
 
             dest_dir = os.path.join(self.drive_path, "Managed_ISOs")
@@ -334,28 +403,62 @@ class DashboardView(QWidget):
                 "url": info.url,
                 "sha256": info.sha256,
             }
-            self.active_tasks[ck] = task
-
-            task.start_async(
-                progress_callback=lambda t: self.bridge.progress_signal.emit(ck, t),
-                completion_callback=lambda s, m: self.bridge.complete_signal.emit(ck, s, m),
-            )
+            # Started on the UI thread, which is the only one that knows whether
+            # this transfer was cancelled while the recipe was still resolving.
+            self.bridge.ready_signal.emit(ck, token, task)
 
         except ScrapeError as e:
             # The recipe refused to guess. Surface why, so the user knows this is
             # an upstream/mirror problem and not a silent stale download.
             log.warning(f"Could not resolve a current download for {recipe.name}: {e.reason}")
-            self.bridge.error_signal.emit(ck, f"Couldn't find a current release - {e.reason}")
+            self._report_setup_error(ck, token, f"Couldn't find a current release - {e.reason}")
         except Exception as e:
             log.exception(f"Download setup failed for {recipe.name}: {e}")
-            self.bridge.error_signal.emit(ck, str(e))
+            self._report_setup_error(ck, token, str(e))
 
     # --------------------------------------- thread-safe slots (main loop)
 
+    def _updating_row(self, ck: str) -> Optional[DistroCard]:
+        """The installed row showing this transfer, if it is shown on one."""
+        row = self.cards.get(ck)
+        return row if row is not None and row.is_downloading else None
+
+    def _remove_download_card(self, ck: str):
+        dcard = self.download_cards.pop(ck, None)
+        if dcard:
+            self.download_layout.removeWidget(dcard)
+            dcard.hide()
+            dcard.deleteLater()
+        if not self.download_cards:
+            self.lbl_downloads.hide()
+
+    def _on_ready_slot(self, ck: str, token: object, task: DownloadTask):
+        if self._download_tokens.get(ck) is not token:
+            # Cancelled during "Starting…". Starting it anyway ran a whole
+            # download nobody could see or stop.
+            return
+        self.active_tasks[ck] = task
+
+        def _completed(success: bool, msg: str):
+            # A cancelled transfer was already cleared away, and by now the
+            # same key may belong to a new attempt this must not be mistaken for.
+            if not task.is_cancelled:
+                self.bridge.complete_signal.emit(ck, success, msg)
+
+        task.start_async(
+            progress_callback=lambda t: self.bridge.progress_signal.emit(ck, t),
+            completion_callback=_completed,
+        )
+
     def _on_progress_slot(self, ck: str, task: DownloadTask):
+        if task.is_cancelled:
+            return
         dcard = self.download_cards.get(ck)
         if dcard:
             dcard.update_progress(task)
+        row = self._updating_row(ck)
+        if row:
+            row.update_progress(task)
 
         target = self.download_targets.get(ck)
         if target:
@@ -365,9 +468,17 @@ class DashboardView(QWidget):
                                         task.speed_mbps, task.eta_seconds)
 
     def _on_error_slot(self, ck: str, err_msg: str):
+        # The transfer is over; leaving the key behind made a retry look like
+        # a download that was already running.
+        self.active_tasks.pop(ck, None)
+        self._download_tokens.pop(ck, None)
+
         dcard = self.download_cards.get(ck)
         if dcard:
             dcard.show_error(err_msg)
+        row = self._updating_row(ck)
+        if row:
+            row.end_download(False, err_msg)
 
         target = self.download_targets.pop(ck, None)
         if target:
@@ -377,10 +488,15 @@ class DashboardView(QWidget):
         card = self.cards.get(ck)
         if card:
             card.set_status_result(version, url)
+        self._pending_checks.discard(ck)
+        self._sync_check_all()
+        self._refresh_subtitle()
 
     def _on_complete_slot(self, ck: str, success: bool, msg: str):
         task = self.active_tasks.pop(ck, None)
+        self._download_tokens.pop(ck, None)
         dcard = self.download_cards.get(ck)
+        row = self._updating_row(ck)
 
         if success:
             if task and hasattr(task, "_distro_meta"):
@@ -396,11 +512,9 @@ class DashboardView(QWidget):
                     sha256=meta["sha256"],
                     url=meta["url"],
                 )
-            if dcard:
-                self.download_layout.removeWidget(dcard)
-                dcard.hide()
-                dcard.deleteLater()
-                self.download_cards.pop(ck, None)
+            self._remove_download_card(ck)
+            if row:
+                row.end_download(True, version=getattr(task, "_distro_meta", {}).get("version", ""))
 
             # Report the outcome before refreshing: a row still marked as
             # downloading would ignore the refresh and keep its progress bar.
@@ -411,15 +525,14 @@ class DashboardView(QWidget):
             self.inventory_mgr.sync_filesystem()
             self.refresh_installed_list()
         else:
+            msg = msg or "Download interrupted"
             if dcard:
-                dcard.show_error(msg or "Download interrupted")
+                dcard.show_error(msg)
+            if row:
+                row.end_download(False, msg)
             target = self.download_targets.pop(ck, None)
             if target:
-                self.download_ended.emit(target[0], target[1], False,
-                                         msg or "Download interrupted")
-
-        if not self.download_cards:
-            self.lbl_downloads.hide()
+                self.download_ended.emit(target[0], target[1], False, msg)
 
     def cancel_by_flavor(self, key: str, flavor_id: str):
         """Cancel a transfer addressed the way the catalog knows it."""
@@ -429,17 +542,15 @@ class DashboardView(QWidget):
         task = self.active_tasks.pop(ck, None)
         if task:
             task.cancel()
+        self._download_tokens.pop(ck, None)
 
         target = self.download_targets.pop(ck, None)
         if target:
             self.download_ended.emit(target[0], target[1], False, "Cancelled")
-        dcard = self.download_cards.pop(ck, None)
-        if dcard:
-            self.download_layout.removeWidget(dcard)
-            dcard.hide()
-            dcard.deleteLater()
-        if not self.download_cards:
-            self.lbl_downloads.hide()
+        self._remove_download_card(ck)
+        row = self._updating_row(ck)
+        if row:
+            row.end_download(False)
         self.refresh_installed_list()
 
     def _dismiss_download(self, ck: str):
@@ -447,13 +558,16 @@ class DashboardView(QWidget):
 
     # ------------------------------------------------------------ actions
 
+    def _key_of(self, card: DistroCard) -> str:
+        return next((ck for ck, c in self.cards.items() if c is card), "")
+
     def _handle_single_check(self, item: InventoryItem, card: DistroCard):
+        ck = self._key_of(card)
+        self._refresh_subtitle()
         recipe = registry.get_recipe(item.key)
         if not recipe:
-            card.set_status_result("Unknown", "")
+            self._on_check_slot(ck, "Unknown", "")
             return
-
-        ck = self.inventory_mgr._composite_key(item.key, item.flavor_id)
 
         def _worker():
             try:
@@ -469,13 +583,27 @@ class DashboardView(QWidget):
         threading.Thread(target=_worker, daemon=True).start()
 
     def _handle_check_all(self):
+        """Check every row, going through the row so it shows that it is asking.
+
+        This used to call the check directly. The rows kept whatever they said
+        last time, so a second press changed nothing on screen until - and
+        unless - an answer came back different.
+        """
         for ck, card in list(self.cards.items()):
-            self._handle_single_check(card.item, card)
+            if card.is_downloading:
+                continue
+            # Registered first: a row with no recipe answers synchronously.
+            self._pending_checks.add(ck)
+            card.start_check()      # a row already checking just keeps waiting
+        self._sync_check_all()
 
     def _handle_single_download(self, item: InventoryItem, card: DistroCard):
         recipe = registry.get_recipe(item.key)
         if recipe:
             self._on_catalog_install_request(recipe, item.flavor_id)
+
+    def _handle_single_cancel(self, item: InventoryItem, card: DistroCard):
+        self._cancel_download(self.inventory_mgr._composite_key(item.key, item.flavor_id))
 
     def _handle_single_remove(self, item: InventoryItem, card: DistroCard):
         reply = QMessageBox.question(
