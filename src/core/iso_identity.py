@@ -11,9 +11,9 @@ itself names that download, and it has to carry a version that compares equal
 to the one the recipe reports. A renamed, remastered or otherwise unfamiliar
 ISO matches nothing and is left alone - never adopted on a guess.
 
-Downloads whose name never changes between releases (openSUSE Tumbleweed's
-"-Current", Bazzite's "-stable", netboot.xyz.iso) are deliberately absent:
-there is no telling which release such a file holds.
+Names that stay the same from one release to the next (the "-Current" and
+"-latest-" aliases, Bazzite's "-stable", netboot.xyz.iso) are deliberately
+absent: there is no telling which release such a file holds.
 """
 import re
 from dataclasses import dataclass
@@ -91,8 +91,24 @@ _RULES: List[_Rule] = [
     _Rule("zorin", rf"Zorin-OS-{V}-(?P<f>Core|Education)-64-bit(?:-r\d+)?\.iso",
           _same("core", "education")),
     _Rule("kde_neon", r"neon-user-desktop-(?P<v>\d{8}-\d{4})\.iso", "user"),
+    _Rule("opensuse", r"Leap-(?P<v>\d+\.\d+)-(?P<f>offline|online)-installer-x86_64"
+                      r"-Build(?P<b>[\d.]+)\.install\.iso",
+          {"offline": "leap-dvd", "online": "leap-net"}, version="{v} (Build {b})"),
+    # Leap 15 and earlier. Still recognised, so that one left on a drive is
+    # offered its update to the current release.
     _Rule("opensuse", rf"openSUSE-Leap-{V}-(?P<f>DVD|NET)-x86_64-Current\.iso",
           {"dvd": "leap-dvd", "net": "leap-net"}),
+    _Rule("opensuse", r"openSUSE-Tumbleweed-(?P<f>DVD|KDE-Live|GNOME-Live|NET)-x86_64"
+                      r"-Snapshot(?P<v>\d{8})-Media\.iso",
+          {"dvd": "tumbleweed-dvd", "kde-live": "tumbleweed-kde",
+           "gnome-live": "tumbleweed-gnome", "net": "tumbleweed-net"}),
+    _Rule("nixos", r"nixos-(?P<f>graphical|minimal)-(?P<v>\d+\.\d+\.\d+)\.[0-9a-f]+-x86_64-linux\.iso",
+          _same("graphical", "minimal")),
+    # The DVD alone is numbered ("dvd1").
+    _Rule("rocky", r"Rocky-(?P<v>\d+\.\d+)-x86_64-(?P<f>dvd|minimal|boot)\d?\.iso",
+          _same("dvd", "minimal", "boot")),
+    _Rule("almalinux", r"AlmaLinux-(?P<v>\d+\.\d+)-x86_64-(?P<f>dvd|minimal|boot)\.iso",
+          _same("dvd", "minimal", "boot")),
     _Rule("elementary", rf"elementaryos-{V}-stable-amd64\.\d+\.iso", "stable"),
     _Rule("tuxedo", r"TUXEDO-OS-(?P<v>\d{12})\.iso", "standard"),
     _Rule("mageia", rf"Mageia-{V}-x86_64\.iso", "classic-dvd"),

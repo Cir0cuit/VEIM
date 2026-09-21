@@ -23,74 +23,92 @@ class OpenSUSERecipe(DistroRecipe):
             FlavorInfo("leap-net", "Leap (Network Install)", "Minimal network installer for the current openSUSE Leap.")
         ]
 
-    # Tumbleweed's "-Current.iso" aliases always point at the newest
-    # snapshot, so they need no discovery. Leap is versioned - never pin it.
-    TUMBLEWEED_ISO = "https://download.opensuse.org/tumbleweed/iso/{name}"
-    LEAP_INDEX = "https://ftp.gwdg.de/pub/opensuse/distribution/leap/"
+    MIRROR = "https://download.opensuse.org/"
+    # Where openSUSE itself says which Leap is current. The mirror cannot: it
+    # already carries images for the next release while that is still a beta.
+    LEAP_PAGE = "https://get.opensuse.org/leap/"
 
+    # flavor -> the part of a Tumbleweed image name that says which one it is
     TUMBLEWEED = {
-        "tumbleweed-dvd": "openSUSE-Tumbleweed-DVD-x86_64-Current.iso",
-        "tumbleweed-kde": "openSUSE-Tumbleweed-KDE-Live-x86_64-Current.iso",
-        "tumbleweed-gnome": "openSUSE-Tumbleweed-GNOME-Live-x86_64-Current.iso",
-        "tumbleweed-net": "openSUSE-Tumbleweed-NET-x86_64-Current.iso",
+        "tumbleweed-dvd": "DVD",
+        "tumbleweed-kde": "KDE-Live",
+        "tumbleweed-gnome": "GNOME-Live",
+        "tumbleweed-net": "NET",
     }
 
-    def _current_leap(self, session, kind: str) -> str:
-        """Newest Leap release that actually publishes an ISO.
+    def _listing(self, session, path: str) -> List[str]:
+        """File names in a mirror directory, from its JSON index."""
+        r = session.get(f"{self.MIRROR}{path}?jsontable", timeout=15)
+        r.raise_for_status()
+        return [entry["name"] for entry in r.json().get("data", [])]
 
-        The mirror carries directories for releases that are staged but not yet
-        populated (16.0 and 16.1 exist while only 15.6 has images), so taking
-        the highest-numbered directory hands back a 404. Walk down from the
-        newest until one serves the image we want.
+    def _tumbleweed(self, session, kind: str) -> DownloadInfo:
+        """The newest snapshot, by its own name.
+
+        This used to hand out the "-Current.iso" alias under the version
+        "Tumbleweed". Both stay the same for ever, so a snapshot downloaded a
+        year ago still read as up to date.
         """
-        try:
-            r = session.get(self.LEAP_INDEX, timeout=15)
-            r.raise_for_status()
-        except Exception as e:
-            raise ScrapeError(self.name, f"could not list Leap releases ({e})")
+        found = {}
+        for name in self._listing(session, "tumbleweed/iso/"):
+            m = re.fullmatch(rf'openSUSE-Tumbleweed-{kind}-x86_64-Snapshot(\d{{8}})-Media\.iso', name)
+            if m:
+                found[m.group(1)] = name
+        if not found:
+            raise ScrapeError(self.name, f"no Tumbleweed {kind} snapshot listed on the mirror")
+        snapshot = max(found)
+        return DownloadInfo(version=snapshot, filename=found[snapshot],
+                            url=f"{self.MIRROR}tumbleweed/iso/{found[snapshot]}")
 
-        versions = sorted(
-            set(re.findall(r'href="(\d+\.\d+)/"', r.text)),
-            key=lambda v: tuple(int(p) for p in v.split(".")),
-            reverse=True,
-        )
+    def _current_leap(self, session) -> str:
+        r = session.get(self.LEAP_PAGE, timeout=15)
+        r.raise_for_status()
+        versions = re.findall(r'leap/(\d+\.\d+)/', r.text)
         if not versions:
-            raise ScrapeError(self.name, "Leap mirror index listed no releases")
+            raise ScrapeError(self.name, "get.opensuse.org named no current Leap release")
+        # The page links the current release; anything else it mentions
+        # (the previous one, a beta) it mentions less.
+        return max(set(versions), key=versions.count)
 
-        for version in versions[:6]:
-            url = self._leap_iso_url(version, kind)
-            try:
-                if session.head(url, allow_redirects=True, timeout=12).status_code == 200:
-                    return version
-            except Exception as e:
-                log.warning(f"[openSUSE] Leap {version} unreachable: {e}")
+    def _leap(self, session, offline: bool) -> DownloadInfo:
+        """The current Leap, in whichever layout that release uses.
 
-        raise ScrapeError(
-            self.name,
-            f"no published Leap release served a {kind} image (newest checked: {versions[0]})",
-        )
-
-    @staticmethod
-    def _leap_iso_url(version: str, kind: str) -> str:
-        fname = f"openSUSE-Leap-{version}-{kind}-x86_64-Current.iso"
-        return f"https://download.opensuse.org/distribution/leap/{version}/iso/{fname}"
+        Leap 16 replaced "iso/openSUSE-Leap-15.6-DVD-..." with
+        "offline/Leap-16.0-offline-installer-...". The old code knew only the
+        first, took 16.0 for a release with no images, and went on serving 15.6.
+        """
+        version = self._current_leap(session)
+        if int(version.split(".")[0]) >= 16:
+            kind = "offline" if offline else "online"
+            builds = {}
+            for name in self._listing(session, f"distribution/leap/{version}/offline/"):
+                m = re.fullmatch(rf'Leap-{re.escape(version)}-{kind}-installer-x86_64-Build([\d.]+)\.install\.iso', name)
+                if m:
+                    builds[m.group(1)] = name
+            if builds:
+                build = max(builds, key=lambda b: tuple(int(n) for n in b.split(".")))
+                return DownloadInfo(
+                    version=f"{version} (Build {build})", filename=builds[build],
+                    url=f"{self.MIRROR}distribution/leap/{version}/offline/{builds[build]}")
+        else:
+            fname = f"openSUSE-Leap-{version}-{'DVD' if offline else 'NET'}-x86_64-Current.iso"
+            if fname in self._listing(session, f"distribution/leap/{version}/iso/"):
+                return DownloadInfo(version=version, filename=fname,
+                                    url=f"{self.MIRROR}distribution/leap/{version}/iso/{fname}")
+        raise ScrapeError(self.name, f"Leap {version} is current, but the mirror lists no image for it")
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         target = flavor_id.lower()
-
-        name = self.TUMBLEWEED.get(target)
-        if name:
-            return DownloadInfo(
-                version="Tumbleweed",
-                url=self.TUMBLEWEED_ISO.format(name=name),
-                filename=name,
-            )
-
         session = self.get_session()
-        kind = "NET" if target == "leap-net" else "DVD"
-        leap = self._current_leap(session, kind)
-        url = self._leap_iso_url(leap, kind)
-        return DownloadInfo(version=leap, url=url, filename=url.split("/")[-1])
+        try:
+            if target in self.TUMBLEWEED:
+                return self._tumbleweed(session, self.TUMBLEWEED[target])
+            return self._leap(session, offline=target != "leap-net")
+        except ScrapeError:
+            raise
+        except Exception as e:
+            log.warning(f"[openSUSE] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read the openSUSE mirror ({e})")
 
 
 class NixOSRecipe(DistroRecipe):
@@ -151,10 +169,25 @@ class NixOSRecipe(DistroRecipe):
             tried.append(channel)
             try:
                 resp = session.head(url, allow_redirects=True, timeout=12)
-                if resp.status_code == 200:
-                    return DownloadInfo(version=channel, url=url, filename=fname)
             except Exception as e:
-                log.warning(f"[NixOS] Channel {channel} unreachable: {e}")
+                # Not an answer. Moving on to an older channel here would serve
+                # the previous release as current because of one timeout.
+                raise ScrapeError(self.name, f"could not reach the {channel} channel ({e})")
+            if resp.status_code not in (200, 404):
+                raise ScrapeError(self.name, f"the {channel} channel answered HTTP {resp.status_code}")
+            if resp.status_code == 404:
+                continue                      # that release does not exist yet
+
+            # "latest-..." redirects to the build it stands for, e.g.
+            # nixos-minimal-26.05.10304.6d663c0533ff-x86_64-linux.iso.
+            # Report that build: the alias and the bare "26.05" stay the same
+            # for six months of rebuilt images, so one downloaded in May still
+            # read as up to date in October.
+            real = resp.url.split("/")[-1]
+            m = re.fullmatch(rf'nixos-{variant}-(\d+\.\d+\.\d+)\.[0-9a-f]+-x86_64-linux\.iso', real)
+            if not m:
+                raise ScrapeError(self.name, f"the {channel} channel resolved to an unexpected file ({real})")
+            return DownloadInfo(version=m.group(1), url=resp.url, filename=real)
 
         raise ScrapeError(self.name, f"no published channel served {fname} (tried {', '.join(tried)})")
 
@@ -214,13 +247,18 @@ class TuxedoRecipe(DistroRecipe):
             r = session.get("https://os.tuxedocomputers.com/", timeout=8)
             if r.status_code == 200:
                 soup = BeautifulSoup(r.text, "html.parser")
+                # Every dated image listed, newest taken - not the first link,
+                # which is the newest only while the listing is sorted that way.
+                found = {}
                 for a in soup.find_all("a"):
                     h = a.get("href", "")
-                    if h.endswith(".iso") and "current" not in h.lower():
-                        url = f"https://os.tuxedocomputers.com/{h}"
-                        m = re.search(r'TUXEDO-OS-([0-9]+)\.iso', h)
-                        ver = m.group(1) if m else "Latest"
-                        return DownloadInfo(version=ver, url=url, filename=h)
+                    m = re.fullmatch(r'TUXEDO-OS-(\d{12})\.iso', h.split("/")[-1])
+                    if m:
+                        found[m.group(1)] = h
+                if found:
+                    ver = max(found)
+                    return DownloadInfo(version=ver, filename=found[ver].split("/")[-1],
+                                        url=f"https://os.tuxedocomputers.com/{found[ver]}")
         except Exception as e:
             log.warning(f"[TUXEDO OS] Scrape error: {e}")
 

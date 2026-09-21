@@ -33,6 +33,11 @@ def _misidentified(recipe, flavor_id, info) -> str:
     A name they read as a different flavor or version is not: the adopted row
     would report an update forever, or fetch the wrong edition.
     """
+    # A version with no number in it ("Stable", "Tumbleweed", "Latest") never
+    # changes, so whatever was downloaded under it reads as up to date for good.
+    if not any(ch.isdigit() for ch in info.version):
+        return f"version {info.version!r} is a label, not a release"
+
     found = identify(info.filename or "")
     expected = (recipe.key, flavor_id, info.version)
     if found is None or (found.key, found.flavor_id, found.version) == expected:

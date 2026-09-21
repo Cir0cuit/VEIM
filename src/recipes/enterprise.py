@@ -48,12 +48,17 @@ class RockyLinuxRecipe(DistroRecipe):
                 listing = session.get(f"{root}{major}/isos/x86_64/", timeout=20)
                 if listing.status_code != 200:
                     continue
-                match = re.search(
-                    rf'(Rocky-{major}[\w.\-]*-x86_64-{flavor_id}\.iso)', listing.text)
-                if match:
-                    fname = match.group(1)
+                # The point release by name ("Rocky-10.2-..."), never the
+                # "Rocky-10-latest-..." alias beside it: that name and the bare
+                # "10" stay the same through 10.3 and 10.4, so an image
+                # downloaded at 10.2 would read as up to date for good. The
+                # DVD alone is numbered ("dvd1").
+                found = re.findall(
+                    rf'(Rocky-({major}\.\d+)-x86_64-{flavor_id}\d?\.iso)', listing.text)
+                if found:
+                    fname, ver = max(found, key=lambda pair: _version_key(pair[1]))
                     return DownloadInfo(
-                        version=major,
+                        version=ver,
                         url=f"{root}{major}/isos/x86_64/{fname}",
                         filename=fname,
                     )

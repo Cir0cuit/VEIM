@@ -41,14 +41,22 @@ class ArtixRecipe(DistroRecipe):
             r = session.get("https://download.artixlinux.org/iso/", timeout=8)
             if r.status_code == 200:
                 soup = BeautifulSoup(r.text, "html.parser")
+                # Every image of this edition the directory holds, newest
+                # taken. The first link found is only the newest for as long
+                # as the mirror keeps nothing older beside it.
+                found = {}
                 for a in soup.find_all("a"):
                     h = a.get("href", "")
-                    if h.endswith(".iso") and f"artix-{sub}" in h:
-                        fname = h.split("/")[-1]
-                        url = h if h.startswith("http") else f"https://download.artixlinux.org/iso/{h}"
-                        m = re.search(r'artix-[a-z\-]+-([0-9]+)-x86_64\.iso', fname)
-                        ver = m.group(1) if m else "Latest"
-                        return DownloadInfo(version=ver, url=url, filename=fname)
+                    m = re.fullmatch(rf'artix-{re.escape(sub)}-(\d{{8}})-x86_64\.iso', h.split("/")[-1])
+                    # The page links the weekly test images too, and those are
+                    # always the newest thing on it.
+                    if m and "weekly" not in h:
+                        found[m.group(1)] = h
+                if found:
+                    ver = max(found)
+                    h = found[ver]
+                    url = h if h.startswith("http") else f"https://download.artixlinux.org/iso/{h}"
+                    return DownloadInfo(version=ver, url=url, filename=h.split("/")[-1])
         except Exception as e:
             log.warning(f"[Artix] Scrape error: {e}")
 
@@ -280,6 +288,19 @@ class AlmaLinuxRecipe(DistroRecipe):
             raise ScrapeError(self.name, "repository index advertised no release series")
 
         major = max(majors)
-        fname = f"AlmaLinux-{major}-latest-x86_64-{f}.iso"
-        url = f"{self.REPO_ROOT}{major}/isos/x86_64/{fname}"
-        return DownloadInfo(version=f"{major}-latest", url=url, filename=fname)
+        iso_dir = f"{self.REPO_ROOT}{major}/isos/x86_64/"
+        try:
+            listing = session.get(iso_dir, timeout=15)
+            listing.raise_for_status()
+        except Exception as e:
+            log.warning(f"[AlmaLinux] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not list the AlmaLinux {major} images ({e})")
+
+        # The point release by name, never the "-latest-" alias beside it:
+        # that name and "10-latest" stay the same through every point release,
+        # so an image downloaded at 10.2 would read as up to date for good.
+        found = re.findall(rf'(AlmaLinux-({major}\.\d+)-x86_64-{f}\.iso)', listing.text)
+        if not found:
+            raise ScrapeError(self.name, f"no AlmaLinux {major} {f} image listed")
+        fname, ver = max(found, key=lambda pair: tuple(int(n) for n in pair[1].split(".")))
+        return DownloadInfo(version=ver, url=iso_dir + fname, filename=fname)

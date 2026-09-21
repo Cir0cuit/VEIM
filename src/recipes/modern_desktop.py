@@ -1,4 +1,5 @@
 import re
+import time
 from typing import List
 from bs4 import BeautifulSoup
 from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
@@ -19,31 +20,46 @@ class PopOSRecipe(DistroRecipe):
             FlavorInfo("nvidia", "NVIDIA Edition", "Includes proprietary NVIDIA graphics drivers pre-installed.")
         ]
 
+    API = "https://api.pop-os.org/builds/{release}/{channel}"
+
+    @staticmethod
+    def _releases_to_try(this_year: int) -> List[str]:
+        """Release numbers, newest first, back to the oldest one still served.
+
+        Pop!_OS numbers its releases after Ubuntu's, so the candidates are
+        known without a list to read them from - and System76 publishes none.
+        """
+        return [f"{yy}.{month}" for yy in range(this_year % 100, 21, -1) for month in ("10", "04")]
+
+    def _from_api(self, session, channel: str):
+        for release in self._releases_to_try(time.gmtime().tm_year):
+            r = session.get(self.API.format(release=release, channel=channel), timeout=10)
+            if r.status_code != 200 or not r.text.strip():
+                continue                      # no such release (yet)
+            build = r.json()
+            url, number = build.get("url", ""), str(build.get("build", ""))
+            if url.endswith(".iso") and number:
+                return DownloadInfo(version=f"{build.get('version', release)} (Build {number})",
+                                    url=url, filename=url.split("/")[-1],
+                                    sha256=build.get("sha_sum", ""))
+        return None
+
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
         target = "nvidia" if flavor_id.lower() == "nvidia" else "intel"
-        
-        try:
-            r = session.get("https://system76.com/download-pop/", timeout=10)
-            if r.status_code == 200:
-                matches = re.findall(r"https?://iso\.pop-os\.org/[^\s'\"]+\.iso", r.text)
-                for iso_url in matches:
-                    if f"/{target}/" in iso_url:
-                        fname = iso_url.split("/")[-1]
-                        m = re.search(r'pop-os_([\d\.]+)_amd64_[^_]+_(\d+)\.iso', fname)
-                        if m:
-                            ver = f"{m.group(1)} (Build {m.group(2)})"
-                        else:
-                            ver = "22.04 LTS"
-                        return DownloadInfo(version=ver, url=iso_url, filename=fname)
-        except Exception as e:
-            log.warning(f"[Pop!_OS] Download-pop scrape error: {e}")
-            raise ScrapeError(self.name, f"could not reach System76's download page ({e})")
 
-        raise ScrapeError(
-            self.name,
-            f"System76's download page listed no {target} ISO in the expected format",
-        )
+        # The build API, and nothing else. This used to read the download
+        # page, whose markup still carries 22.04 links long after 24.04
+        # shipped - so a release two years old was served as the current one.
+        # Falling back to that page would bring the same answer back.
+        try:
+            info = self._from_api(session, target)
+        except Exception as e:
+            log.warning(f"[Pop!_OS] Build API error: {e}")
+            raise ScrapeError(self.name, f"could not reach System76's build API ({e})")
+        if info:
+            return info
+        raise ScrapeError(self.name, f"System76's build API listed no {target} ISO")
 
 class KDENeonRecipe(DistroRecipe):
     def __init__(self):

@@ -1,4 +1,5 @@
 import re
+from email.utils import parsedate_to_datetime
 from typing import List
 from bs4 import BeautifulSoup
 from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
@@ -36,7 +37,29 @@ class BazziteRecipe(DistroRecipe):
         image_name = mapping.get(flavor_id.lower(), "bazzite")
         fname = f"{image_name}-stable-amd64.iso"
         url = f"https://download.bazzite.gg/{fname}"
-        return DownloadInfo(version="Stable", url=url, filename=fname)
+
+        # Bazzite publishes one file per edition under a name that never
+        # changes, and this used to report it as version "Stable" - which never
+        # changes either, so a rebuilt installer was never noticed. The file's
+        # own date is the only version it has.
+        session = self.get_session()
+        try:
+            head = session.head(url, allow_redirects=True, timeout=15)
+            head.raise_for_status()
+            built = parsedate_to_datetime(head.headers["Last-Modified"])
+        except Exception as e:
+            log.warning(f"[Bazzite] Could not read the image date: {e}")
+            raise ScrapeError(self.name, f"download.bazzite.gg did not say when {fname} was built")
+
+        sha256 = ""
+        try:
+            checksum = session.get(url + "-CHECKSUM", timeout=15)
+            m = re.match(r'([0-9a-f]{64})\s', checksum.text) if checksum.status_code == 200 else None
+            sha256 = m.group(1) if m else ""
+        except Exception as e:
+            log.warning(f"[Bazzite] No checksum for {fname}: {e}")
+
+        return DownloadInfo(version=built.strftime("%Y%m%d"), url=url, filename=fname, sha256=sha256)
 
 
 class GarudaRecipe(DistroRecipe):
