@@ -118,3 +118,23 @@ def test_removing_a_second_iso_of_the_same_distro_removes_that_one(drive_root, m
     assert not os.path.exists(os.path.join(managed_dir, second))
     assert os.path.exists(os.path.join(managed_dir, first)), "the other ISO was deleted"
     assert [i.filename for i in inv.get_all_items()] == [first]
+
+
+def test_updating_a_second_iso_of_the_same_distro_replaces_that_one(drive_root, make_iso, managed_dir):
+    """Regression: the update was recorded by distro and flavor, which is the
+    first ISO's record - so the first ISO's file was deleted and the one that
+    was actually updated kept its old file."""
+    first = make_iso("archlinux-2026.03.01-x86_64.iso")
+    second = make_iso("archlinux-2026.09.01-x86_64.iso")
+    inv = InventoryManager(drive_root)
+    by_file = {item.filename: ck for ck, item in inv.items.items()}
+
+    new = make_iso("archlinux-2026.10.01-x86_64.iso")
+    inv.add_or_update("arch", "standard", "Arch Linux", "2026.10.01", new, 1024,
+                      ck=by_file[second])
+
+    assert os.path.exists(os.path.join(managed_dir, first)), "the other ISO was deleted"
+    assert not os.path.exists(os.path.join(managed_dir, second))
+    assert inv.items[by_file[first]].filename == first
+    assert inv.items[by_file[second]].filename == new
+    assert len(inv.items) == 2

@@ -713,6 +713,97 @@ def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp
     assert [c.item.filename for c in ws.library.cards.values()] == [first.name]
 
 
+@pytest.fixture
+def two_arch_isos(workspace, qapp, tmp_path):
+    """Two ISOs that both guess to arch::standard; the second gets a longer key."""
+    ws = workspace
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    first = managed / "archlinux-2026.03.01-x86_64.iso"
+    second = managed / "archlinux-2026.09.01-x86_64.iso"
+    first.write_bytes(b"iso")
+    second.write_bytes(b"iso")
+    ws.library.inventory_mgr.sync_filesystem()
+    ws.library.refresh_installed_list()
+    qapp.processEvents()
+    keys = {c.item.filename: ck for ck, c in ws.library.cards.items()}
+    return ws, first, second, keys[first.name], keys[second.name]
+
+
+def test_update_runs_on_and_replaces_the_row_that_was_clicked(two_arch_isos, qapp, tmp_path):
+    """Regression: Update on the second of two ISOs of one distro showed its
+    progress on the first row, then deleted the first row's file."""
+    ws, first, second, first_ck, second_ck = two_arch_isos
+    lib = ws.library
+
+    card = _update(ws, qapp, ck=second_ck)
+    assert card.is_downloading
+    assert not lib.cards[first_ck].is_downloading, "the update ran on the other row"
+
+    iso = tmp_path / "Managed_ISOs" / "archlinux-2026.10.01-x86_64.iso"
+    iso.write_bytes(b"newer iso")
+    task = DownloadTask("https://example.invalid/new.iso", str(iso))
+    task._distro_meta = dict(key="arch", flavor_id="standard", display_name="Arch Linux",
+                             version="2026.10.01", filename=iso.name, sha256="",
+                             url="https://example.invalid/new.iso")
+    lib.active_tasks[second_ck] = task
+    lib._on_complete_slot(second_ck, True, "Success")
+    qapp.processEvents()
+
+    assert first.exists(), "the update deleted a different ISO"
+    assert not second.exists(), "the replaced ISO was left on the drive"
+    assert lib.cards[first_ck].item.filename == first.name
+    assert lib.cards[second_ck] is card
+    assert card.item.filename == iso.name
+    assert card.status.text() == "Updated"
+
+
+def test_cancel_stops_the_update_of_the_row_that_was_clicked(two_arch_isos, qapp):
+    ws, _, _, first_ck, second_ck = two_arch_isos
+    card = _update(ws, qapp, ck=second_ck)
+    assert second_ck in ws.library.active_tasks
+
+    card.btn_cancel.click()
+    qapp.processEvents()
+
+    assert second_ck not in ws.library.active_tasks
+    assert not card.is_downloading
+
+
+def test_catalog_cancel_stops_a_download_started_from_any_row(two_arch_isos, qapp):
+    """The catalog shows one bar per flavor, whichever row is fetching it."""
+    ws, _, _, first_ck, second_ck = two_arch_isos
+    card = _update(ws, qapp, ck=second_ck)
+    assert ws.catalog.rows["arch"].is_downloading("standard")
+
+    ws.catalog.rows["arch"]._on_button()      # now reads "Cancel"
+    qapp.processEvents()
+
+    assert not card.is_downloading, "Cancel in the catalog left the transfer running"
+    assert ws.library.active_tasks == {}
+
+
+def test_two_rows_cannot_download_the_same_file_at_once(two_arch_isos, qapp, tmp_path):
+    ws, _, _, first_ck, second_ck = two_arch_isos
+    lib = ws.library
+    dest = str(tmp_path / "Managed_ISOs" / "archlinux-2026.10.01-x86_64.iso")
+
+    _update(ws, qapp, ck=first_ck)
+    running = DownloadTask("https://example.invalid/new.iso", dest)
+    lib.active_tasks[first_ck] = running
+
+    second = _update(ws, qapp, ck=second_ck)
+    started = []
+    task = DownloadTask("https://example.invalid/new.iso", dest)
+    task.start_async = lambda **kw: started.append(kw)
+    lib._on_ready_slot(second_ck, lib._download_tokens[second_ck], task)
+
+    assert started == []
+    assert not second.is_downloading
+    assert "already being downloaded" in second.meta.text()
+    assert lib.cards[first_ck].is_downloading
+
+
 # ------------------------------------------------------ check all updates
 
 @pytest.fixture

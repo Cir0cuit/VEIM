@@ -327,11 +327,19 @@ class DashboardView(QWidget):
     def open_catalog(self):
         self.browse_catalog.emit()
 
-    def _on_catalog_install_request(self, recipe: DistroRecipe, flavor_id: str):
+    def _on_catalog_install_request(self, recipe: DistroRecipe, flavor_id: str,
+                                    ck: str = ""):
+        """Start a download. `ck` names the installed row it replaces.
+
+        The catalog knows only a distro and a flavor, which is the plain
+        composite key. A row passes its own key, because a second ISO of the
+        same distro and flavor is filed under a longer one - and its update
+        used to run on, and then overwrite, the first ISO's row instead.
+        """
         flavor_obj = next((f for f in recipe.get_flavors() if f.id == flavor_id), None)
         flavor_name = flavor_obj.name if flavor_obj else flavor_id.title()
         dname = f"{recipe.name} {flavor_name}"
-        ck = self.inventory_mgr._composite_key(recipe.key, flavor_id)
+        ck = ck or self.inventory_mgr._composite_key(recipe.key, flavor_id)
 
         if ck in self.active_tasks:
             # Already running; the row is showing its progress already.
@@ -437,6 +445,12 @@ class DashboardView(QWidget):
             # Cancelled during "Starting…". Starting it anyway ran a whole
             # download nobody could see or stop.
             return
+        if any(other is not None and other.dest_path == task.dest_path
+               for other in self.active_tasks.values()):
+            # Two rows of one distro resolve to the same file. A second writer
+            # on its .part would corrupt both.
+            self._on_error_slot(ck, "This ISO is already being downloaded.")
+            return
         self.active_tasks[ck] = task
 
         def _completed(success: bool, msg: str):
@@ -511,6 +525,9 @@ class DashboardView(QWidget):
                     size_bytes=actual_size,
                     sha256=meta["sha256"],
                     url=meta["url"],
+                    # The record this transfer set out to replace, which for a
+                    # second ISO of one distro is not the distro-and-flavor one.
+                    ck=ck if ck in self.inventory_mgr.items else "",
                 )
             self._remove_download_card(ck)
             if row:
@@ -536,7 +553,12 @@ class DashboardView(QWidget):
 
     def cancel_by_flavor(self, key: str, flavor_id: str):
         """Cancel a transfer addressed the way the catalog knows it."""
-        self._cancel_download(self.inventory_mgr._composite_key(key, flavor_id))
+        # Whichever rows are fetching this flavor: the catalog shows one
+        # progress bar for it, and its Cancel has to stop what that bar shows.
+        running = [ck for ck, target in self.download_targets.items()
+                   if target == (key, flavor_id)]
+        for ck in running or [self.inventory_mgr._composite_key(key, flavor_id)]:
+            self._cancel_download(ck)
 
     def _cancel_download(self, ck: str):
         task = self.active_tasks.pop(ck, None)
@@ -600,10 +622,10 @@ class DashboardView(QWidget):
     def _handle_single_download(self, item: InventoryItem, card: DistroCard):
         recipe = registry.get_recipe(item.key)
         if recipe:
-            self._on_catalog_install_request(recipe, item.flavor_id)
+            self._on_catalog_install_request(recipe, item.flavor_id, ck=self._key_of(card))
 
     def _handle_single_cancel(self, item: InventoryItem, card: DistroCard):
-        self._cancel_download(self.inventory_mgr._composite_key(item.key, item.flavor_id))
+        self._cancel_download(self._key_of(card))
 
     def _handle_single_remove(self, item: InventoryItem, card: DistroCard):
         reply = QMessageBox.question(

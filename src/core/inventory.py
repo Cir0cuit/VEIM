@@ -168,8 +168,15 @@ class InventoryManager:
             del self.items[ck]
 
     def add_or_update(self, key: str, flavor_id: str, display_name: str, version: str,
-                      filename: str, size_bytes: int = 0, sha256: str = "", url: str = ""):
-        ck = self._composite_key(key, flavor_id)
+                      filename: str, size_bytes: int = 0, sha256: str = "", url: str = "",
+                      ck: str = ""):
+        """Record an ISO, replacing the record - and the file - it supersedes.
+
+        `ck` names the record to replace when that is not the distro-and-flavor
+        one: sync_filesystem() files a second ISO of the same pair under a
+        longer key, and updating it must not overwrite the first.
+        """
+        ck = ck or self._composite_key(key, flavor_id)
         old_item = self.items.get(ck)
 
         # Claim this file for `ck`, discarding any entry that tracked it before
