@@ -33,6 +33,21 @@ class VentoyConfig:
             except Exception as e:
                 log.warning(f"Could not parse ventoy.json, will rebuild: {e}")
 
+    def search_root(self) -> str:
+        """The one directory Ventoy is told to look in, or "" if it looks everywhere.
+
+        Read from the file on the drive, not from the defaults above: until
+        VEIM has saved once there is no ventoy.json, and Ventoy still lists
+        every ISO it can find. A ventoy.json somebody wrote themselves may not
+        restrict the search at all.
+        """
+        if not os.path.exists(self.config_file):
+            return ""
+        for entry in self.data.get("control") or []:
+            if isinstance(entry, dict) and entry.get("VTOY_DEFAULT_SEARCH_ROOT"):
+                return str(entry["VTOY_DEFAULT_SEARCH_ROOT"])
+        return ""
+
     def sync_aliases(self, managed_items: List[Dict[str, Any]]):
         """
         managed_items: list of dicts with 'filename' and 'display_name'.

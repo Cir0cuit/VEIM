@@ -207,6 +207,39 @@ class InventoryManager:
         tracked = {item.filename for item in self.items.values()}
         return [f for f in self._iso_names(self.managed_dir) if f not in tracked]
 
+    def hidden_root_isos(self) -> List[str]:
+        """ISOs in the drive root that Ventoy will not list.
+
+        VEIM's ventoy.json points Ventoy at Managed_ISOs alone, so an ISO left
+        in the root vanishes from the boot menu. Ones still waiting for an
+        answer in the adoption dialog are not counted: adopting moves them.
+        """
+        if self.ventoy_config.search_root().strip("/") != os.path.basename(self.managed_dir):
+            return []
+        waiting = {c.filename for c in self.find_candidates() if c.in_root}
+        return [f for f in self._iso_names(self.ventoy_root) if f not in waiting]
+
+    def move_into_managed(self, filenames: List[str]) -> List[str]:
+        """Move root ISOs into Managed_ISOs so they boot, without tracking them.
+
+        Returns the ones that could not be moved. A file of the same name
+        already in Managed_ISOs is never overwritten.
+        """
+        failed = []
+        os.makedirs(self.managed_dir, exist_ok=True)
+        for fname in filenames:
+            src = os.path.join(self.ventoy_root, fname)
+            dst = os.path.join(self.managed_dir, fname)
+            try:
+                if os.path.exists(dst):
+                    raise FileExistsError(dst)
+                shutil.move(src, dst)
+                log.info(f"Moved {fname} into Managed_ISOs")
+            except Exception as e:
+                log.error(f"Could not move {fname} into Managed_ISOs: {e}")
+                failed.append(fname)
+        return failed
+
     def adopt(self, candidate: AdoptionCandidate, display_name: str) -> bool:
         """Start tracking a candidate, moving it into Managed_ISOs if need be."""
         dst = os.path.join(self.managed_dir, candidate.filename)

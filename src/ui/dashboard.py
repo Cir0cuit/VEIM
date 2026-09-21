@@ -169,6 +169,23 @@ class DashboardView(QWidget):
         body_layout.addSpacing(6)
         body_layout.addWidget(self.lbl_unmanaged)
 
+        # ISOs in the drive root, which VEIM's own ventoy.json hides from the
+        # boot menu. Only adopted ISOs are moved now, so without this an ISO
+        # the catalog does not know would stay hidden with no way to fix it.
+        self.hidden_notice = QFrame()
+        self.hidden_notice.setObjectName("row")
+        notice_layout = QHBoxLayout(self.hidden_notice)
+        notice_layout.setContentsMargins(14, 10, 14, 10)
+        notice_layout.setSpacing(14)
+        self.lbl_hidden = QLabel("")
+        self.lbl_hidden.setObjectName("rowMeta")
+        self.lbl_hidden.setWordWrap(True)
+        notice_layout.addWidget(self.lbl_hidden, 1)
+        self.btn_move_in = make_button("Move Into Managed_ISOs", "ghost", self._move_hidden_isos)
+        notice_layout.addWidget(self.btn_move_in, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.hidden_notice.hide()
+        body_layout.addWidget(self.hidden_notice)
+
         body_layout.addStretch()
         self.scroll.setWidget(body)
         root.addWidget(self.scroll, 1)
@@ -343,6 +360,26 @@ class DashboardView(QWidget):
                 "They boot as usual and are never checked or changed.")
             self.lbl_unmanaged.setToolTip("\n".join(others))
         self.lbl_unmanaged.setVisible(bool(others))
+
+        hidden = self.inventory_mgr.hidden_root_isos()
+        if hidden:
+            count = len(hidden)
+            self.lbl_hidden.setText(
+                f"{count} ISO{'s' if count != 1 else ''} in the drive root "
+                f"{'are' if count != 1 else 'is'} missing from the Ventoy boot menu: "
+                "VEIM sets Ventoy to look in Managed_ISOs only. Moving them in "
+                "brings them back. They are not changed, and not managed.")
+            self.hidden_notice.setToolTip("\n".join(hidden))
+        self.hidden_notice.setVisible(bool(hidden))
+
+    def _move_hidden_isos(self, *_):
+        failed = self.inventory_mgr.move_into_managed(self.inventory_mgr.hidden_root_isos())
+        self.refresh_installed_list()
+        if failed:
+            QMessageBox.warning(
+                self, "Could not move",
+                "These stay in the drive root - a file of the same name may already "
+                "be in Managed_ISOs:\n\n" + "\n".join(failed))
 
     def _sync_check_all(self):
         """The header button is its own busy indicator, like each row's pill."""

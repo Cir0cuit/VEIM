@@ -242,3 +242,56 @@ def test_inventory_from_an_older_version_is_cleaned_up_on_load(drive_root, make_
     assert [c.filename for c in inv.find_candidates()] == ["grml-full-2026.04-amd64.iso"]
     # Nothing on the drive was touched.
     assert len(os.listdir(managed_dir)) == 6
+
+
+# ------------------------------------------------- ISOs Ventoy cannot see
+
+def _root_iso(drive_root, name):
+    with open(os.path.join(drive_root, name), "wb") as fh:
+        fh.write(b"iso")
+    return name
+
+
+def test_root_isos_are_hidden_only_once_ventoy_is_pointed_at_managed_isos(drive_root, make_iso):
+    """VEIM's ventoy.json makes Ventoy search Managed_ISOs alone. Before it
+    exists - or if somebody's own ventoy.json sets no search root - an ISO in
+    the drive root boots fine and there is nothing to report."""
+    _root_iso(drive_root, "Win11_25H2_English_x64.iso")
+    inv = InventoryManager(drive_root)
+    assert inv.hidden_root_isos() == []
+
+    # The first save writes ventoy.json, search root and all.
+    inv.add_or_update("arch", "standard", "Arch Linux", "2026.09.01",
+                      make_iso("archlinux-2026.09.01-x86_64.iso"), url="https://example.invalid/a.iso")
+    assert InventoryManager(drive_root).hidden_root_isos() == ["Win11_25H2_English_x64.iso"]
+
+
+def test_hidden_root_isos_leave_out_what_the_adoption_dialog_will_move(drive_root, make_iso):
+    inv = InventoryManager(drive_root)
+    inv.add_or_update("arch", "standard", "Arch Linux", "2026.09.01",
+                      make_iso("archlinux-2026.09.01-x86_64.iso"), url="https://example.invalid/a.iso")
+    _root_iso(drive_root, "Win11_25H2_English_x64.iso")
+    waiting = _root_iso(drive_root, "debian-13.4.0-amd64-netinst.iso")
+    left_alone = _root_iso(drive_root, "clonezilla-live-20260705-resolute-amd64.iso")
+    inv.set_excluded(left_alone, True)
+
+    # Excluded means "never adopt", not "never boot": it is still hidden.
+    assert sorted(inv.hidden_root_isos()) == sorted([left_alone, "Win11_25H2_English_x64.iso"])
+    assert [c.filename for c in inv.find_candidates()] == [waiting]
+
+
+def test_moving_root_isos_in_tracks_nothing_and_overwrites_nothing(drive_root, make_iso, managed_dir):
+    inv = InventoryManager(drive_root)
+    inv.add_or_update("arch", "standard", "Arch Linux", "2026.09.01",
+                      make_iso("archlinux-2026.09.01-x86_64.iso"), url="https://example.invalid/a.iso")
+    _root_iso(drive_root, "Win11_25H2_English_x64.iso")
+    _root_iso(drive_root, "HBCD_PE_x64.iso")
+    make_iso("HBCD_PE_x64.iso", 2048)                 # a different file of the same name
+
+    failed = inv.move_into_managed(inv.hidden_root_isos())
+
+    assert failed == ["HBCD_PE_x64.iso"]
+    assert os.path.exists(os.path.join(managed_dir, "Win11_25H2_English_x64.iso"))
+    assert os.path.exists(os.path.join(drive_root, "HBCD_PE_x64.iso")), "the root copy was lost"
+    assert os.path.getsize(os.path.join(managed_dir, "HBCD_PE_x64.iso")) == 2048, "a file was overwritten"
+    assert [i.filename for i in inv.get_all_items()] == ["archlinux-2026.09.01-x86_64.iso"]

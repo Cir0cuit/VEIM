@@ -977,6 +977,29 @@ def test_adopt_all_respects_an_exclusion(drive_with_loose_isos):
     assert choices["archlinux-2026.05.01-x86_64.iso"] == "adopt"
 
 
+def test_root_isos_the_boot_menu_cannot_see_can_be_moved_in(drive_with_loose_isos, qapp, tmp_path):
+    """Regression: "Adopt Root ISOs" used to move every root ISO into
+    Managed_ISOs, the one folder VEIM lets Ventoy search. Once only adopted
+    ISOs moved, an ISO the catalog does not know stayed in the root, missing
+    from the boot menu, with nothing in the app to say so or fix it."""
+    lib = drive_with_loose_isos.library
+    (tmp_path / "HBCD_PE_x64.iso").write_bytes(b"iso")
+    _adopt_everything(drive_with_loose_isos)      # saves, which writes ventoy.json
+    qapp.processEvents()
+
+    assert not lib.hidden_notice.isHidden()
+    assert lib.lbl_hidden.text().startswith("1 ISO in the drive root is missing")
+    assert "HBCD_PE_x64.iso" in lib.hidden_notice.toolTip()
+
+    lib.btn_move_in.click()
+    qapp.processEvents()
+
+    assert (tmp_path / "Managed_ISOs" / "HBCD_PE_x64.iso").exists()
+    assert lib.hidden_notice.isHidden()
+    assert len(lib.cards) == 3, "moving an ISO in made a row of it"
+    assert "HBCD_PE_x64.iso" in lib.lbl_unmanaged.toolTip()
+
+
 # ------------------------------------------------------ check all updates
 
 @pytest.fixture
