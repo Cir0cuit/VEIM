@@ -8,7 +8,7 @@ showed up in a full-flavor sweep.
 import pytest
 
 from src.core.recipe_base import ScrapeError
-from src.recipes.fedora import FedoraRecipe
+from src.recipes.fedora import FedoraRecipe, FedoraSpinsRecipe
 
 
 SAMPLE = [
@@ -63,10 +63,12 @@ def test_resolves_workstation_to_newest_version(recipe):
     assert "Workstation-Live-44" in info.filename
 
 
-def test_resolves_spins_by_subvariant(recipe):
+def test_resolves_spins_by_subvariant(monkeypatch):
     """Regression: these were unresolvable when only `variant` was matched."""
+    spins = FedoraSpinsRecipe()
+    monkeypatch.setattr(spins, "get_session", lambda: _Session())
     for flavor in ("cinnamon", "xfce"):
-        info = recipe.fetch_download_info(flavor)
+        info = spins.fetch_download_info(flavor)
         assert flavor in info.filename.lower(), f"{flavor} resolved to {info.filename}"
         assert info.version == "44"
 
@@ -92,4 +94,7 @@ def test_unknown_flavor_fails_loudly(recipe):
 def test_every_declared_flavor_is_resolvable_in_principle(recipe):
     """Each declared flavor must be a real id, not a label with no backing."""
     ids = [f.id for f in recipe.get_flavors()]
-    assert "workstation" in ids and "cinnamon" in ids
+    assert "workstation" in ids and "kde" in ids
+    # The desktop spins are an entry of their own, as on fedoraproject.org.
+    assert "cinnamon" not in ids
+    assert "cinnamon" in [f.id for f in FedoraSpinsRecipe().get_flavors()]

@@ -79,19 +79,33 @@ class SparkyRecipe(DistroRecipe):
             FlavorInfo("lxqt", "LXQt Edition", "Extremely lightweight modern Qt desktop."),
             FlavorInfo("mate", "MATE Edition", "Classic desktop paradigm with traditional panel layout."),
             FlavorInfo("minimalgui", "MinimalGUI (Openbox)", "Barebones graphical desktop with Openbox window manager."),
-            FlavorInfo("minimalcli", "MinimalCLI (Console)", "Console-only installation for custom minimal setups.")
+            FlavorInfo("minimalcli", "MinimalCLI (Console)", "Console-only installation for custom minimal setups."),
+            FlavorInfo("rolling-xfce", "Rolling: Xfce", "Semi-rolling line on Debian testing, with Xfce."),
+            FlavorInfo("rolling-kde", "Rolling: KDE Plasma", "Semi-rolling line, with KDE Plasma."),
+            FlavorInfo("rolling-lxqt", "Rolling: LXQt", "Semi-rolling line, with LXQt."),
+            FlavorInfo("rolling-mate", "Rolling: MATE", "Semi-rolling line, with MATE."),
+            FlavorInfo("rolling-minimalgui", "Rolling: MinimalGUI", "Semi-rolling line, Openbox only."),
+            FlavorInfo("rolling-minimalcli", "Rolling: MinimalCLI", "Semi-rolling line, console only."),
+            FlavorInfo("rolling-gameover", "Rolling: GameOver", "For gamers: launchers, emulators and tools preinstalled."),
+            FlavorInfo("rolling-multimedia", "Rolling: Multimedia", "For audio, video and graphics work."),
+            FlavorInfo("rolling-rescue", "Rolling: Rescue", "Live system for repairing a broken installation."),
         ]
 
-    DOWNLOAD_PAGE = "https://sparkylinux.org/download/stable/"
+    STABLE_PAGE = "https://sparkylinux.org/download/stable/"
+    ROLLING_PAGE = "https://sparkylinux.org/download/rolling/"
+    STABLE = {"xfce", "kde", "lxqt", "mate", "minimalgui", "minimalcli"}
+    ROLLING = STABLE | {"gameover", "multimedia", "rescue"}
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         target = flavor_id.lower()
-        if target not in {"xfce", "kde", "lxqt", "mate", "minimalgui", "minimalcli"}:
-            target = "xfce"
+        rolling = target.startswith("rolling-")
+        target = target[len("rolling-"):] if rolling else target
+        if target not in (self.ROLLING if rolling else self.STABLE):
+            raise ScrapeError(self.name, f"unknown Sparky edition {flavor_id!r}")
 
         session = self.get_session()
         try:
-            r = session.get(self.DOWNLOAD_PAGE, timeout=15)
+            r = session.get(self.ROLLING_PAGE if rolling else self.STABLE_PAGE, timeout=15)
             r.raise_for_status()
         except Exception as e:
             log.warning(f"[Sparky] Scrape error: {e}")

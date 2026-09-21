@@ -1,16 +1,16 @@
 from typing import List, Dict, Optional
 from src.core.recipe_base import DistroRecipe
-from src.recipes.fedora import FedoraRecipe
+from src.recipes.fedora import FedoraRecipe, FedoraAtomicRecipe, FedoraSpinsRecipe, FedoraLabsRecipe
 from src.recipes.ubuntu import UbuntuRecipe
 from src.recipes.mint import MintRecipe
 from src.recipes.debian import DebianRecipe
 from src.recipes.arch import ArchRecipe
 from src.recipes.rolling import ManjaroRecipe, EndeavourRecipe, OmarchyRecipe
-from src.recipes.security import KaliRecipe, ParrotRecipe
-from src.recipes.modern_desktop import PopOSRecipe, KDENeonRecipe, ZorinRecipe
+from src.recipes.security import KaliRecipe, ParrotRecipe, CaineRecipe
+from src.recipes.modern_desktop import PopOSRecipe, KDENeonRecipe, ZorinRecipe, LinuxLiteRecipe
 from src.recipes.rescue import (
     ClonezillaRecipe, GPartedRecipe, RescuezillaRecipe, ShredOSRecipe,
-    NetbootRecipe, SystemRescueRecipe, MemtestRecipe)
+    NetbootRecipe, SystemRescueRecipe, MemtestRecipe, SuperGrub2Recipe, HrmpfRecipe)
 from src.recipes.lightweight import PuppyRecipe, TinyCoreRecipe, AlpineRecipe
 from src.recipes.gaming import BazziteRecipe, GarudaRecipe, CachyOSRecipe, NobaraRecipe, PikaOSRecipe
 from src.recipes.community_desktop import OpenSUSERecipe, NixOSRecipe, ElementaryRecipe, TuxedoRecipe, MageiaRecipe
@@ -18,7 +18,9 @@ from src.recipes.specialized import ArtixRecipe, SparkyRecipe, TailsRecipe, Fyde
 from src.recipes.debian_family import (
     MXLinuxRecipe, AntiXRecipe, DevuanRecipe, Q4OSRecipe, GrmlRecipe)
 from src.recipes.independent import VoidRecipe, GentooRecipe, SlackwareRecipe
-from src.recipes.enterprise import RockyLinuxRecipe, ProxmoxRecipe, QubesRecipe
+from src.recipes.enterprise import (
+    RockyLinuxRecipe, ProxmoxRecipe, QubesRecipe, FreeBSDRecipe, IPFireRecipe, OracleLinuxRecipe,
+    TalosRecipe, CentOSStreamRecipe, XCPngRecipe, OpenEulerRecipe)
 
 # Order is the order the filter chips appear in.
 CATEGORY_ORDER = [
@@ -41,8 +43,12 @@ CATEGORY_BY_KEY = {
     "elementary": "Beginner Friendly",
     "tuxedo": "Beginner Friendly",
     "fydeos": "Beginner Friendly",
+    "linuxlite": "Beginner Friendly",
 
     "fedora": "General Purpose",
+    "fedora_atomic": "General Purpose",
+    "fedora_spins": "General Purpose",
+    "fedora_labs": "General Purpose",
     "debian": "General Purpose",
     "opensuse": "General Purpose",
     "kde_neon": "General Purpose",
@@ -72,10 +78,18 @@ CATEGORY_BY_KEY = {
     "tails": "Security & Privacy",
     "qubes": "Security & Privacy",
     "hackeros": "Security & Privacy",
+    "caine": "Security & Privacy",
 
     "almalinux": "Server & Enterprise",
     "rocky": "Server & Enterprise",
     "proxmox": "Server & Enterprise",
+    "centos": "Server & Enterprise",
+    "oracle": "Server & Enterprise",
+    "openeuler": "Server & Enterprise",
+    "freebsd": "Server & Enterprise",
+    "xcpng": "Server & Enterprise",
+    "talos": "Server & Enterprise",
+    "ipfire": "Server & Enterprise",
 
     "systemrescue": "Rescue & Diagnostics",
     "clonezilla": "Rescue & Diagnostics",
@@ -85,6 +99,8 @@ CATEGORY_BY_KEY = {
     "memtest": "Rescue & Diagnostics",
     "shredos": "Rescue & Diagnostics",
     "netboot": "Rescue & Diagnostics",
+    "supergrub2": "Rescue & Diagnostics",
+    "hrmpf": "Rescue & Diagnostics",
 
     "antix": "Lightweight",
     "puppy": "Lightweight",
@@ -111,11 +127,15 @@ class RecipeRegistry:
 
     def _register_defaults(self):
         self._register(FedoraRecipe())
+        self._register(FedoraAtomicRecipe())
+        self._register(FedoraSpinsRecipe())
+        self._register(FedoraLabsRecipe())
         self._register(UbuntuRecipe())
         self._register(MintRecipe())
         self._register(DebianRecipe())
         self._register(PopOSRecipe())
         self._register(ZorinRecipe())
+        self._register(LinuxLiteRecipe())
         self._register(KDENeonRecipe())
         self._register(OpenSUSERecipe())
         self._register(ElementaryRecipe())
@@ -126,6 +146,13 @@ class RecipeRegistry:
         self._register(MXLinuxRecipe())
         self._register(DevuanRecipe())
         self._register(RockyLinuxRecipe())
+        self._register(CentOSStreamRecipe())
+        self._register(OracleLinuxRecipe())
+        self._register(OpenEulerRecipe())
+        self._register(FreeBSDRecipe())
+        self._register(XCPngRecipe())
+        self._register(TalosRecipe())
+        self._register(IPFireRecipe())
         self._register(SlackwareRecipe())
 
         self._register(ArchRecipe())
@@ -148,6 +175,7 @@ class RecipeRegistry:
         self._register(TailsRecipe())
         self._register(HackerOSRecipe())
         self._register(QubesRecipe())
+        self._register(CaineRecipe())
 
         self._register(ClonezillaRecipe())
         self._register(SystemRescueRecipe())
@@ -158,6 +186,8 @@ class RecipeRegistry:
         self._register(RescuezillaRecipe())
         self._register(ShredOSRecipe())
         self._register(NetbootRecipe())
+        self._register(SuperGrub2Recipe())
+        self._register(HrmpfRecipe())
 
         self._register(PuppyRecipe())
         self._register(TinyCoreRecipe())

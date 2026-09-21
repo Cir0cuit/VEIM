@@ -19,6 +19,10 @@ class DebianRecipe(DistroRecipe):
             FlavorInfo("gnome", "Live GNOME", "Full live environment with GNOME desktop."),
             FlavorInfo("kde", "Live KDE Plasma", "Full live environment with KDE Plasma desktop."),
             FlavorInfo("xfce", "Live Xfce", "Lightweight live environment with Xfce desktop."),
+            FlavorInfo("cinnamon", "Live Cinnamon", "Full live environment with Cinnamon desktop."),
+            FlavorInfo("mate", "Live MATE", "Full live environment with MATE desktop."),
+            FlavorInfo("lxqt", "Live LXQt", "Very light live environment with LXQt desktop."),
+            FlavorInfo("lxde", "Live LXDE", "Very light live environment with LXDE desktop."),
             FlavorInfo("standard", "Live Standard (Console)", "Minimal console-only live rescue environment.")
         ]
 

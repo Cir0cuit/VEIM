@@ -295,3 +295,26 @@ def test_moving_root_isos_in_tracks_nothing_and_overwrites_nothing(drive_root, m
     assert os.path.exists(os.path.join(drive_root, "HBCD_PE_x64.iso")), "the root copy was lost"
     assert os.path.getsize(os.path.join(managed_dir, "HBCD_PE_x64.iso")) == 2048, "a file was overwritten"
     assert [i.filename for i in inv.get_all_items()] == ["archlinux-2026.09.01-x86_64.iso"]
+
+
+def test_a_fedora_spin_installed_before_the_split_keeps_working(drive_root, make_iso, managed_dir):
+    """Fedora became four catalog entries. A Cinnamon spin recorded under
+    "fedora" has to follow its flavor to "fedora_spins", or its row could no
+    longer be checked - the Fedora entry has no such flavor any more."""
+    import json
+
+    fname = make_iso("Fedora-Cinnamon-Live-44-1.7.x86_64.iso")
+    kde = make_iso("Fedora-KDE-Desktop-Live-44-1.7.x86_64.iso")
+    records = {
+        "fedora::cinnamon": dict(key="fedora", flavor_id="cinnamon", display_name="Fedora Cinnamon",
+                                 version="44", filename=fname, url="https://example.invalid/c.iso"),
+        "fedora::kde": dict(key="fedora", flavor_id="kde", display_name="Fedora KDE",
+                            version="44", filename=kde),
+    }
+    with open(os.path.join(managed_dir, "veim_inventory.json"), "w", encoding="utf-8") as fh:
+        json.dump(records, fh)
+
+    inv = InventoryManager(drive_root)
+
+    assert sorted(inv.items) == ["fedora::kde", "fedora_spins::cinnamon"]
+    assert inv.items["fedora_spins::cinnamon"].key == "fedora_spins"

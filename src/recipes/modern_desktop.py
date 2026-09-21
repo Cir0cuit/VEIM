@@ -148,3 +148,41 @@ class ZorinRecipe(DistroRecipe):
         version = isos[0][0]
         url = urls[0]
         return DownloadInfo(version=version, url=url, filename=url.split("/")[-1])
+
+
+class LinuxLiteRecipe(DistroRecipe):
+    def __init__(self):
+        super().__init__(
+            key="linuxlite",
+            name="Linux Lite",
+            category="Popular & Desktop",
+            description="Ubuntu LTS made easy for people arriving from Windows, light enough for older PCs.",
+        )
+
+    def get_flavors(self) -> List[FlavorInfo]:
+        return [FlavorInfo("standard", "64-bit (Xfce)", "The one edition: a complete Xfce desktop.")]
+
+    def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
+        session = self.get_session()
+        try:
+            r = session.get("https://sourceforge.net/projects/linux-lite/rss?limit=100",
+                            timeout=25, headers={"User-Agent": "curl/8.4.0"})
+            r.raise_for_status()
+        except Exception as e:
+            log.warning(f"[Linux Lite] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read the SourceForge file list ({e})")
+
+        # Finals only: release candidates ("linux-lite-8.0-rc2-64bit.iso")
+        # are published in the same tree.
+        found = {}
+        for path in re.findall(r'<title><!\[CDATA\[(/[^\]]+)\]\]></title>', r.text):
+            m = re.fullmatch(r'.*/linux-lite-(\d+\.\d+)-64bit\.iso', path)
+            if m:
+                found[m.group(1)] = path
+        if not found:
+            raise ScrapeError(self.name, "no released 64-bit ISO listed on SourceForge")
+
+        ver = max(found, key=lambda v: tuple(int(n) for n in v.split(".")))
+        path = found[ver]
+        return DownloadInfo(version=ver, filename=path.rsplit("/", 1)[-1],
+                            url=f"https://downloads.sourceforge.net/project/linux-lite{path}")

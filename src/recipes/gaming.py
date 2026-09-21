@@ -23,8 +23,8 @@ class BazziteRecipe(DistroRecipe):
         ]
 
     # Bazzite publishes rolling "-stable-" images: the filename never changes
-    # and upstream repoints it at each build, so there is no version to resolve
-    # and nothing that can go stale.
+    # and upstream repoints it at each build. The URL is therefore fixed; the
+    # version is read from the file itself, below.
     USES_CURRENT_ALIAS = True
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -78,7 +78,11 @@ class GarudaRecipe(DistroRecipe):
             FlavorInfo("gnome", "GNOME Edition", "Clean and gesture-friendly modern GNOME desktop."),
             FlavorInfo("kde-lite", "KDE Lite", "Stripped-down, ultra-fast minimal KDE Plasma edition."),
             FlavorInfo("xfce", "Xfce Edition", "Lightweight, responsive and classic desktop environment."),
-            FlavorInfo("cinnamon", "Cinnamon Edition", "Traditional, elegant desktop layout.")
+            FlavorInfo("cinnamon", "Cinnamon Edition", "Traditional, elegant desktop layout."),
+            FlavorInfo("mokka", "Mokka (KDE)", "Catppuccin-themed KDE Plasma desktop."),
+            FlavorInfo("hyprland", "Hyprland Edition", "Animated tiling Wayland compositor."),
+            FlavorInfo("sway", "Sway Edition", "Tiling Wayland compositor, compatible with i3."),
+            FlavorInfo("i3", "i3 Edition", "Keyboard-driven tiling window manager."),
         ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -90,9 +94,15 @@ class GarudaRecipe(DistroRecipe):
             "gnome": "gnome",
             "kde-lite": "kde-lite",
             "xfce": "xfce",
-            "cinnamon": "cinnamon"
+            "cinnamon": "cinnamon",
+            "mokka": "mokka",
+            "hyprland": "hyprland",
+            "sway": "sway",
+            "i3": "i3",
         }
-        sub = folder_map.get(target, "dr460nized")
+        if target not in folder_map:
+            raise ScrapeError(self.name, f"unknown Garuda edition {flavor_id!r}")
+        sub = folder_map[target]
         base_url = f"https://iso.builds.garudalinux.org/iso/garuda/{sub}/"
 
         try:

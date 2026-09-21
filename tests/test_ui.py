@@ -1111,9 +1111,10 @@ def test_dropdown_shows_every_option_without_scrolling(themed, qapp):
     view_page.show()
     qapp.processEvents()
 
-    # Ubuntu has the longest list in the catalog.
-    combo = view_page.rows["ubuntu"].combo
-    assert combo.count() == 7
+    # Whichever entry has the longest list: the promise is about that one.
+    combo = max((row.combo for row in view_page.rows.values() if row.combo is not None),
+                key=lambda c: c.count())
+    assert combo.count() >= 12
     listview, container = _open(combo, qapp)
 
     needed = combo.count() * listview.sizeHintForRow(0)

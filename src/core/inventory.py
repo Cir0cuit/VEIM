@@ -8,6 +8,14 @@ from src.core.iso_identity import IsoIdentity, identify
 from src.core.logger import log
 from src.core.ventoy_config import VentoyConfig
 
+# Catalog entries that were split after inventories had been written with the
+# old key: (key, flavor) as recorded -> the key that flavor lives under now.
+MOVED_FLAVORS = {
+    ("fedora", "cinnamon"): "fedora_spins",
+    ("fedora", "xfce"): "fedora_spins",
+    ("fedora", "budgie"): "fedora_spins",
+}
+
 # Reserved entry in the inventory file. Every other entry is a record, and a
 # reader that predates this one skips anything that is not a dict.
 EXCLUDED_KEY = "_excluded"
@@ -116,6 +124,7 @@ class InventoryManager:
                 if not isinstance(val, dict):
                     continue
                 item = InventoryItem.from_dict(val)
+                item.key = MOVED_FLAVORS.get((item.key, item.flavor_id), item.key)
                 full_path = os.path.join(self.managed_dir, item.filename)
                 if not os.path.exists(full_path):
                     log.info(f"ISO {item.filename} no longer exists on disk, skipping.")

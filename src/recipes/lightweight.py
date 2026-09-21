@@ -94,7 +94,9 @@ class TinyCoreRecipe(DistroRecipe):
         return [
             FlavorInfo("coreplus", "CorePlus (x86)", "Complete installation image with wireless tools and window managers."),
             FlavorInfo("tinycore", "TinyCore (x86)", "Minimalist GUI desktop experience (16 MB)."),
-            FlavorInfo("corepure64", "CorePure64 (x86_64)", "Pure 64-bit Core Linux system.")
+            FlavorInfo("corepure64", "CorePure64 (x86_64)", "Pure 64-bit Core Linux system."),
+            FlavorInfo("tinycorepure64", "TinyCorePure64 (x86_64)", "64-bit Core with the minimalist GUI desktop."),
+            FlavorInfo("core", "Core (x86)", "Command line only: the 17 MB base everything else builds on."),
         ]
 
     # flavor -> (architecture folder, image name)
@@ -102,6 +104,8 @@ class TinyCoreRecipe(DistroRecipe):
         "coreplus": ("x86", "CorePlus"),
         "tinycore": ("x86", "TinyCore"),
         "corepure64": ("x86_64", "CorePure64"),
+        "tinycorepure64": ("x86_64", "TinyCorePure64"),
+        "core": ("x86", "Core"),
     }
 
     def _current_series(self, session) -> int:
@@ -119,7 +123,9 @@ class TinyCoreRecipe(DistroRecipe):
         return max(series)
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        arch, image = self._IMAGES.get(flavor_id.lower(), self._IMAGES["coreplus"])
+        if flavor_id.lower() not in self._IMAGES:
+            raise ScrapeError(self.name, f"unknown Tiny Core image {flavor_id!r}")
+        arch, image = self._IMAGES[flavor_id.lower()]
         session = self.get_session()
 
         try:
@@ -152,12 +158,16 @@ class AlpineRecipe(DistroRecipe):
     def get_flavors(self) -> List[FlavorInfo]:
         return [
             FlavorInfo("standard", "Standard x86_64", "General purpose live and installation media."),
-            FlavorInfo("extended", "Extended x86_64", "Includes additional packages for offline installs.")
+            FlavorInfo("extended", "Extended x86_64", "Includes additional packages for offline installs."),
+            FlavorInfo("virt", "Virtual x86_64", "Slimmed-down kernel, for virtual machines."),
+            FlavorInfo("xen", "Xen x86_64", "With Xen hypervisor support, for a dom0."),
         ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
-        target = "alpine-extended" if flavor_id.lower() == "extended" else "alpine-standard"
+        if flavor_id.lower() not in ("standard", "extended", "virt", "xen"):
+            raise ScrapeError(self.name, f"unknown Alpine image {flavor_id!r}")
+        target = f"alpine-{flavor_id.lower()}"
 
         try:
             r = session.get("https://alpinelinux.org/downloads/", timeout=10)

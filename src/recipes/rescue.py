@@ -249,3 +249,92 @@ class MemtestRecipe(DistroRecipe):
             log.warning(f"[Memtest86+] Scrape error: {e}")
 
         raise ScrapeError(self.name, "no current release listed on memtest.org")
+
+
+def _sourceforge_files(session, project: str, limit: int = 100) -> List[str]:
+    """Paths of the newest files in a SourceForge project, from its RSS feed."""
+    r = session.get(f"https://sourceforge.net/projects/{project}/rss?limit={limit}",
+                    timeout=25, headers={"User-Agent": "curl/8.4.0"})
+    r.raise_for_status()
+    return re.findall(r'<title><!\[CDATA\[(/[^\]]+)\]\]></title>', r.text)
+
+
+class SuperGrub2Recipe(DistroRecipe):
+    def __init__(self):
+        super().__init__(
+            key="supergrub2",
+            name="Super GRUB2 Disk",
+            category="Rescue & Diagnostics",
+            description="Boots an installed system whose own bootloader is broken or missing.",
+        )
+
+    # flavor -> the platform named in the image file
+    PLATFORMS = {
+        "multiarch": "multiarch",
+        "x86_64-efi": "x86_64_efi",
+        "i386-pc": "i386_pc",
+        "i386-efi": "i386_efi",
+    }
+
+    def get_flavors(self) -> List[FlavorInfo]:
+        return [
+            FlavorInfo("multiarch", "Hybrid (BIOS and UEFI)", "One image for every PC; the one to pick if unsure."),
+            FlavorInfo("x86_64-efi", "64-bit UEFI", "For 64-bit UEFI firmware only."),
+            FlavorInfo("i386-pc", "Legacy BIOS", "For BIOS machines only."),
+            FlavorInfo("i386-efi", "32-bit UEFI", "For the rare 32-bit UEFI firmware."),
+        ]
+
+    def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
+        platform = self.PLATFORMS.get(flavor_id)
+        if platform is None:
+            raise ScrapeError(self.name, f"unknown Super GRUB2 Disk image {flavor_id!r}")
+        session = self.get_session()
+        try:
+            paths = _sourceforge_files(session, "supergrub2")
+        except Exception as e:
+            log.warning(f"[Super GRUB2 Disk] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read the SourceForge file list ({e})")
+
+        # Finals only: betas are published as "2.06s5-beta1" in the same tree.
+        found = {}
+        for path in paths:
+            m = re.fullmatch(rf'.*/(supergrub2-classic-(\d+\.\d+s\d+)-{platform}-CD\.iso)', path)
+            if m:
+                found[m.group(2)] = path
+        if not found:
+            raise ScrapeError(self.name, f"no released {platform} image listed on SourceForge")
+
+        ver = max(found, key=lambda v: tuple(int(n) for n in re.findall(r'\d+', v)))
+        path = found[ver]
+        return DownloadInfo(version=ver, filename=path.rsplit("/", 1)[-1],
+                            url=f"https://downloads.sourceforge.net/project/supergrub2{path}")
+
+
+class HrmpfRecipe(DistroRecipe):
+    def __init__(self):
+        super().__init__(
+            key="hrmpf",
+            name="hrmpf",
+            category="Rescue & Diagnostics",
+            description="Void Linux-based rescue system: a console packed with repair and recovery tools.",
+        )
+
+    def get_flavors(self) -> List[FlavorInfo]:
+        return [FlavorInfo("standard", "x86_64", "Console rescue system for 64-bit PCs.")]
+
+    def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
+        session = self.get_session()
+        try:
+            r = session.get("https://api.github.com/repos/leahneukirchen/hrmpf/releases/latest", timeout=15)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            log.warning(f"[hrmpf] GitHub API error: {e}")
+            raise ScrapeError(self.name, f"could not read the hrmpf release feed ({e})")
+
+        for asset in data.get("assets", []):
+            m = re.fullmatch(r'hrmpf-x86_64-(\d{8})\.iso', asset.get("name", ""))
+            if m:
+                return DownloadInfo(version=m.group(1), url=asset.get("browser_download_url"),
+                                    filename=asset["name"])
+        raise ScrapeError(self.name, "the latest hrmpf release carries no x86_64 ISO")

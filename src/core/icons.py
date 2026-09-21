@@ -18,6 +18,10 @@ ICON_URLS = {
     "debian": "https://commons.wikimedia.org/wiki/Special:FilePath/Debian-OpenLogo.svg",
     "endeavour": "https://commons.wikimedia.org/wiki/Special:FilePath/EndeavourOS_Logo.svg",
     "fedora": "https://commons.wikimedia.org/wiki/Special:FilePath/Fedora_icon_%282021%29.svg",
+    # Four catalog entries, one project.
+    "fedora_atomic": "https://commons.wikimedia.org/wiki/Special:FilePath/Fedora_icon_%282021%29.svg",
+    "fedora_spins": "https://commons.wikimedia.org/wiki/Special:FilePath/Fedora_icon_%282021%29.svg",
+    "fedora_labs": "https://commons.wikimedia.org/wiki/Special:FilePath/Fedora_icon_%282021%29.svg",
     "kali": "https://commons.wikimedia.org/wiki/Special:FilePath/Kali-dragon-icon.svg",
     "mint": "https://commons.wikimedia.org/wiki/Special:FilePath/Linux_Mint_logo_without_wordmark.svg",
     "manjaro": "https://commons.wikimedia.org/wiki/Special:FilePath/Manjaro-logo.svg",
@@ -74,6 +78,21 @@ ICON_URLS = {
     "rocky": "https://commons.wikimedia.org/wiki/Special:FilePath/Rocky_Linux_logo.svg",
     "proxmox": "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/svg/proxmox.svg",
     "qubes": "https://commons.wikimedia.org/wiki/Special:FilePath/Qubes_OS_Logo.svg",
+    "centos": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/centos.svg",
+    "oracle": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/oracle.svg",
+    "talos": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/talos.svg",
+    "xcpng": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/xcp-ng.svg",
+    "openeuler": "https://avatars.githubusercontent.com/u/59104494?v=4&s=460",
+    "freebsd": "https://commons.wikimedia.org/wiki/Special:FilePath/Daemon-phk.svg",
+    "ipfire": "https://www.ipfire.org/static/img/ipfire-tux.png",
+    # The feather, from the project's GitHub account: the logo on Wikimedia is
+    # a dark wordmark, which disappears on a dark chip.
+    "linuxlite": "https://avatars.githubusercontent.com/u/5382578?v=4&s=460",
+    # The only mark the project publishes that is not a banner.
+    "caine": "https://distrowatch.com/images/yvzhuwbpy/caine.png",
+    "supergrub2": "https://avatars.githubusercontent.com/u/17692608?v=4&s=460",
+    # hrmpf has no logo of its own; it is a Void Linux system.
+    "hrmpf": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/main/svg/void-linux.svg",
 
     # Gaming
     "nobara": "https://avatars.githubusercontent.com/u/155680587?v=4&s=460",

@@ -14,7 +14,7 @@ USB drive up to date, without hunting down a download page for every one.
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-[**Download**](https://github.com/Cir0cuit/VEIM/releases/latest) · 50 distributions · 139 editions
+[**Download**](https://github.com/Cir0cuit/VEIM/releases/latest) · 64 distributions and tools · 216 editions
 
 ![The installed library](docs/images/library.png)
 
@@ -87,7 +87,7 @@ downloaded.
    folder.
 2. **Installed** is what is already on the drive, including ISOs you copied
    there yourself.
-3. **Browse Catalog** is the list of 50 projects. Choose an edition from the
+3. **Browse Catalog** is the list of 64 entries. Choose an edition from the
    selector on a row and press **Download**. It streams straight to the drive
    and reports progress on that row, so you can queue up another while it runs.
 4. Come back later and press **Check All Updates**.
@@ -115,7 +115,7 @@ two-year-old ISO that looked fine in the list.
 
 | | |
 |---|---|
-| **Browse and install** | 50 distributions, 139 editions, filtered by category or free-text search. Downloads start from the row you are looking at and report progress there, so you can queue several without leaving the catalog. |
+| **Browse and install** | 64 entries, 216 editions, filtered by category or free-text search. Downloads start from the row you are looking at and report progress there, so you can queue several without leaving the catalog. |
 | **Resumable transfers** | Downloads stream to a `.part` file and pick up where they stopped, using HTTP range requests. Several can run at once, and free space is checked before any of them starts. |
 | **Checksum verification** | Where a project publishes a SHA-256, the finished file is hashed before it is renamed from `.part` to `.iso`, and a mismatch deletes it instead of writing it to your drive. |
 | **Readable boot menu** | Writes `ventoy/ventoy.json` aliases like `Fedora 44 KDE Plasma`. Aliases you added by hand are preserved. |
@@ -137,19 +137,21 @@ two-year-old ISO that looked fine in the list.
 
 | Category | Distributions |
 |---|---|
-| **Beginner Friendly** | elementary OS, FydeOS, Linux Mint, Pop!_OS, TUXEDO OS, Ubuntu, Zorin OS |
-| **General Purpose** | Debian, Fedora, KDE Neon, Mageia, MX Linux, openSUSE |
+| **Beginner Friendly** | elementary OS, FydeOS, Linux Lite, Linux Mint, Pop!_OS, TUXEDO OS, Ubuntu, Zorin OS |
+| **General Purpose** | Debian, Fedora, Fedora Atomic Desktops, Fedora Labs, Fedora Spins, KDE Neon, Mageia, MX Linux, openSUSE |
 | **Rolling Release** | Arch Linux, Artix Linux, EndeavourOS, Manjaro, Omarchy |
 | **Enthusiast** | Devuan, Gentoo, NixOS, Slackware, Void Linux |
 | **Gaming & Performance** | Bazzite, CachyOS, Garuda Linux, Nobara Project, PikaOS |
-| **Security & Privacy** | HackerOS, Kali Linux, Parrot OS, Qubes OS, Tails |
-| **Server & Enterprise** | AlmaLinux OS, Proxmox VE, Rocky Linux |
-| **Rescue & Diagnostics** | Clonezilla, GParted Live, Grml, Memtest86+, netboot.xyz, Rescuezilla, ShredOS, SystemRescue |
+| **Security & Privacy** | CAINE, HackerOS, Kali Linux, Parrot OS, Qubes OS, Tails |
+| **Server & Enterprise** | AlmaLinux OS, CentOS Stream, FreeBSD, IPFire, openEuler, Oracle Linux, Proxmox, Rocky Linux, Talos Linux, XCP-ng |
+| **Rescue & Diagnostics** | Clonezilla, GParted Live, Grml, hrmpf, Memtest86+, netboot.xyz, Rescuezilla, ShredOS, Super GRUB2 Disk, SystemRescue |
 | **Lightweight** | Alpine Linux, antiX, Puppy Linux, Q4OS, SparkyLinux, Tiny Core Linux |
 
-Most offer several editions — Fedora has six spins, Ubuntu seven flavors —
+Most offer several editions — Ubuntu has twelve flavors, Proxmox four products —
 picked from a selector on the row rather than filling the list with
-near-duplicates.
+near-duplicates. Fedora publishes some forty images, so it is four entries,
+split the way fedoraproject.org splits them: Editions, Atomic Desktops, Spins
+and Labs.
 
 ## Questions
 

@@ -21,7 +21,12 @@ class UbuntuRecipe(DistroRecipe):
             FlavorInfo("xubuntu", "Xubuntu", "Fast and lightweight Xfce desktop."),
             FlavorInfo("lubuntu", "Lubuntu", "Extremely lightweight LXQt desktop."),
             FlavorInfo("mate", "Ubuntu MATE", "Classic, comfortable MATE desktop."),
-            FlavorInfo("budgie", "Ubuntu Budgie", "Refined and elegant Budgie desktop.")
+            FlavorInfo("budgie", "Ubuntu Budgie", "Refined and elegant Budgie desktop."),
+            FlavorInfo("cinnamon", "Ubuntu Cinnamon", "Traditional Cinnamon desktop."),
+            FlavorInfo("unity", "Ubuntu Unity", "The Unity desktop Ubuntu shipped until 17.04."),
+            FlavorInfo("studio", "Ubuntu Studio", "For audio, video and graphics production."),
+            FlavorInfo("edubuntu", "Edubuntu", "Ubuntu with education software, for schools and homes."),
+            FlavorInfo("kylin", "Ubuntu Kylin", "The official flavour for Chinese-language users."),
         ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -36,7 +41,12 @@ class UbuntuRecipe(DistroRecipe):
                 "xubuntu": "xubuntu",
                 "lubuntu": "lubuntu",
                 "mate": "ubuntu-mate",
-                "budgie": "ubuntu-budgie"
+                "budgie": "ubuntu-budgie",
+                "cinnamon": "ubuntucinnamon",
+                "unity": "ubuntu-unity",
+                "studio": "ubuntustudio",
+                "edubuntu": "edubuntu",
+                "kylin": "ubuntukylin",
             }
             slug = slug_map.get(target, "ubuntu")
             base_url = f"https://cdimage.ubuntu.com/{slug}/releases/"
@@ -79,11 +89,15 @@ class UbuntuRecipe(DistroRecipe):
                                     return DownloadInfo(version=ver, url=p + href2, filename=href2)
                                 elif target == "server" and ("live-server" in hl or "server" in hl):
                                     return DownloadInfo(version=ver, url=p + href2, filename=href2)
-                                elif target in hl or (target == "mate" and "ubuntu-mate" in hl) or (target == "budgie" and "ubuntu-budgie" in hl):
+                                elif target not in ("desktop", "server") and hl.startswith(f"{slug}-"):
                                     return DownloadInfo(version=ver, url=p + href2, filename=href2)
-                    except Exception:
-                        continue
+                    except Exception as e:
+                        # Not an answer. Moving on to the next-older release
+                        # here would serve it as current because of one timeout.
+                        raise ScrapeError(self.name, f"could not read {p} ({e})")
 
+        except ScrapeError:
+            raise
         except Exception as e:
             log.warning(f"[Ubuntu] Error scraping {base_url}: {e}")
             raise ScrapeError(self.name, f"could not read the {target} release index ({e})")

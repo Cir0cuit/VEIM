@@ -56,7 +56,10 @@ def test_no_silent_stale_fallbacks(recipe: DistroRecipe):
     goes stale because upstream repoints it. Those must say so explicitly via
     USES_CURRENT_ALIAS so the intent is reviewable rather than implied.
     """
-    source = inspect.getsource(type(recipe))
+    # The recipe's own class and any shared base it resolves through: the four
+    # Fedora entries are a table each, over one base that does the fetching.
+    source = "\n".join(inspect.getsource(cls) for cls in type(recipe).__mro__
+                       if cls.__module__.startswith("src.recipes"))
     lowered = source.lower()
 
     assert "# fallback" not in lowered, (

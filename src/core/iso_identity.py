@@ -64,26 +64,53 @@ V = r"(?P<v>\d+(?:\.\d+)*)"          # 44, 22.3, 13.7.0
 DATE8 = r"(?P<v>\d{8})"              # 20260813
 
 _RULES: List[_Rule] = [
-    _Rule("fedora", rf"Fedora-(?P<f>Workstation|KDE-Desktop|KDE|Cinnamon|Xfce|Budgie)-Live-(?P<v>\d+)-[\d.]+\.x86_64\.iso",
-          {"workstation": "workstation", "kde-desktop": "kde", "kde": "kde",
-           "cinnamon": "cinnamon", "xfce": "xfce", "budgie": "budgie"}),
+    # Fedora is four catalog entries (see recipes/fedora.py); the name says
+    # which one an image belongs to.
+    _Rule("fedora", r"Fedora-(?P<f>Workstation|KDE-Desktop|KDE)-Live-(?P<v>\d+)-[\d.]+\.x86_64\.iso",
+          {"workstation": "workstation", "kde-desktop": "kde", "kde": "kde"}),
     # Fedora put the architecture before the version until release 42.
-    _Rule("fedora", rf"Fedora-(?P<f>Workstation|KDE|Cinnamon|Xfce|Budgie)-Live-x86_64-(?P<v>\d+)-[\d.]+\.iso",
-          _same("workstation", "kde", "cinnamon", "xfce", "budgie")),
-    _Rule("fedora", rf"Fedora-Server-dvd-x86_64-(?P<v>\d+)-[\d.]+\.iso", "server"),
+    _Rule("fedora", r"Fedora-(?P<f>Workstation|KDE)-Live-x86_64-(?P<v>\d+)-[\d.]+\.iso",
+          _same("workstation", "kde")),
+    _Rule("fedora", r"Fedora-Server-(?P<f>dvd|netinst)-x86_64-(?P<v>\d+)-[\d.]+\.iso",
+          {"dvd": "server", "netinst": "server-netinst"}),
+    _Rule("fedora", r"Fedora-Everything-netinst-x86_64-(?P<v>\d+)-[\d.]+\.iso", "everything"),
+    _Rule("fedora", r"Fedora-IoT-ostree-(?P<v>\d+)-(?P<d>\d{8}\.\d+)\.x86_64\.iso", "iot",
+          version="{v} ({d})"),
+    _Rule("fedora_atomic", r"Fedora-(?P<f>Silverblue|Kinoite|Sericea|Onyx|COSMIC-Atomic)-ostree-x86_64"
+                           r"-(?P<v>\d+)-[\d.]+\.iso",
+          {"silverblue": "silverblue", "kinoite": "kinoite", "sericea": "sway-atomic",
+           "onyx": "budgie-atomic", "cosmic-atomic": "cosmic-atomic"}),
+    _Rule("fedora_spins", r"Fedora-(?P<f>Xfce|Cinnamon|Budgie|COSMIC|MATE_Compiz|LXQt|LXDE|i3|Sway"
+                          r"|MiracleWM|KDE-Mobile|SoaS)-Live-(?P<v>\d+)-[\d.]+\.x86_64\.iso",
+          {"xfce": "xfce", "cinnamon": "cinnamon", "budgie": "budgie", "cosmic": "cosmic",
+           "mate_compiz": "mate", "lxqt": "lxqt", "lxde": "lxde", "i3": "i3", "sway": "sway",
+           "miraclewm": "miraclewm", "kde-mobile": "kde-mobile", "soas": "soas"}),
+    _Rule("fedora_spins", r"Fedora-(?P<f>Xfce|Cinnamon|Budgie|MATE_Compiz|LXQt|LXDE|i3|Sway|SoaS)"
+                          r"-Live-x86_64-(?P<v>\d+)-[\d.]+\.iso",
+          {"xfce": "xfce", "cinnamon": "cinnamon", "budgie": "budgie", "mate_compiz": "mate",
+           "lxqt": "lxqt", "lxde": "lxde", "i3": "i3", "sway": "sway", "soas": "soas"}),
+    _Rule("fedora_labs", r"Fedora-(?P<f>Astronomy_KDE|Design_suite|Games|Jam_KDE|Python-Classroom|Robotics"
+                         r"|Scientific_KDE|Security)-Live-(?P<v>\d+)-[\d.]+\.x86_64\.iso",
+          {"astronomy_kde": "astronomy", "design_suite": "design-suite", "games": "games",
+           "jam_kde": "jam", "python-classroom": "python-classroom", "robotics": "robotics",
+           "scientific_kde": "scientific", "security": "security"}),
 
     _Rule("ubuntu", rf"ubuntu-{V}-desktop-amd64\.iso", "desktop"),
     _Rule("ubuntu", rf"ubuntu-{V}-live-server-amd64\.iso", "server"),
     _Rule("ubuntu", rf"(?P<f>kubuntu|xubuntu|lubuntu)-{V}-desktop-amd64\.iso",
           _same("kubuntu", "xubuntu", "lubuntu")),
-    _Rule("ubuntu", rf"ubuntu-(?P<f>mate|budgie)-{V}-desktop-amd64\.iso", _same("mate", "budgie")),
+    _Rule("ubuntu", rf"ubuntu-(?P<f>mate|budgie|unity)-{V}-desktop-amd64\.iso",
+          _same("mate", "budgie", "unity")),
+    _Rule("ubuntu", rf"(?P<f>ubuntucinnamon|ubuntustudio|edubuntu|ubuntukylin)-{V}-desktop-amd64\.iso",
+          {"ubuntucinnamon": "cinnamon", "ubuntustudio": "studio", "edubuntu": "edubuntu",
+           "ubuntukylin": "kylin"}),
 
     _Rule("mint", rf"linuxmint-{V}-(?P<f>cinnamon|mate|xfce)-64bit\.iso",
           _same("cinnamon", "mate", "xfce")),
 
     _Rule("debian", rf"debian-{V}-amd64-netinst\.iso", "netinst"),
-    _Rule("debian", rf"debian-live-{V}-amd64-(?P<f>gnome|kde|xfce|standard)\.iso",
-          _same("gnome", "kde", "xfce", "standard")),
+    _Rule("debian", rf"debian-live-{V}-amd64-(?P<f>gnome|kde|xfce|cinnamon|mate|lxqt|lxde|standard)\.iso",
+          _same("gnome", "kde", "xfce", "cinnamon", "mate", "lxqt", "lxde", "standard")),
 
     _Rule("popos", rf"pop-os_{V}_amd64_(?P<f>intel|nvidia)_(?P<b>\d+)\.iso",
           _same("intel", "nvidia"), version="{v} (Build {b})"),
@@ -134,9 +161,10 @@ _RULES: List[_Rule] = [
     _Rule("gentoo", rf"livegui-amd64-{DATE8}T\d{{6}}Z\.iso", "livegui"),
     _Rule("omarchy", rf"omarchy-{V}\.iso", "standard"),
 
-    _Rule("garuda", r"garuda-(?P<f>dr460nized-gaming|dr460nized|gnome|kde-lite|xfce|cinnamon)"
-                    r"-linux-[a-z]+-(?P<v>\d{6})\.iso",
-          _same("dr460nized-gaming", "dr460nized", "gnome", "kde-lite", "xfce", "cinnamon")),
+    _Rule("garuda", r"garuda-(?P<f>dr460nized-gaming|dr460nized|gnome|kde-lite|xfce|cinnamon|mokka"
+                    r"|hyprland|sway|i3)-linux-[a-z]+-(?P<v>\d{6})\.iso",
+          _same("dr460nized-gaming", "dr460nized", "gnome", "kde-lite", "xfce", "cinnamon", "mokka",
+                "hyprland", "sway", "i3")),
     _Rule("cachyos", r"cachyos-(?P<f>desktop|handheld)-linux-(?P<v>\d{6})\.iso",
           _same("desktop", "handheld")),
     _Rule("nobara", r"Nobara-(?P<v>\d+)-(?P<f>Official|KDE|GNOME|Steam-HTPC|Steam-Handheld)"
@@ -150,6 +178,7 @@ _RULES: List[_Rule] = [
 
     _Rule("kali", r"kali-linux-(?P<v>\d{4}\.\d+[a-z]?)-installer-amd64\.iso", "installer"),
     _Rule("kali", r"kali-linux-(?P<v>\d{4}\.\d+[a-z]?)-installer-purple-amd64\.iso", "purple"),
+    _Rule("kali", r"kali-linux-(?P<v>\d{4}\.\d+[a-z]?)-installer-netinst-amd64\.iso", "netinst"),
     _Rule("parrot", rf"Parrot-(?P<f>security|home)-{V}_amd64\.iso", _same("security", "home")),
     _Rule("tails", rf"tails-amd64-{V}\.iso", "standard"),
     _Rule("hackeros", rf"HackerOS-V{V}(?:-(?P<f>LTS|Cybersecurity|Gaming|NVIDIA))?\.iso",
@@ -163,17 +192,47 @@ _RULES: List[_Rule] = [
     _Rule("grml", r"grml-(?P<f>full|small)-(?P<v>\d{4}\.\d{2})-amd64\.iso", _same("full", "small")),
     _Rule("memtest", rf"memtest86plus-{V}-x86_64(?P<g>\.grub)?\.iso",
           lambda m: "grub" if m.group("g") else "x86_64"),
-    _Rule("proxmox", r"proxmox-ve_(?P<v>\d+\.\d+-\d+)\.iso", "installer"),
+    _Rule("proxmox", r"proxmox-(?P<f>ve|backup-server|mail-gateway|datacenter-manager)"
+                     r"_(?P<v>\d+\.\d+-\d+)\.iso",
+          {"ve": "installer", "backup-server": "backup-server", "mail-gateway": "mail-gateway",
+           "datacenter-manager": "datacenter-manager"}),
     _Rule("gparted", r"gparted-live-(?P<v>\d+(?:\.\d+)*-\d+)-amd64\.iso", "standard"),
     _Rule("rescuezilla", rf"rescuezilla-{V}-64bit\.[a-z]+\.iso", "standard"),
+
+    _Rule("supergrub2", r"supergrub2-classic-(?P<v>\d+\.\d+s\d+)-(?P<f>multiarch|x86_64_efi|i386_pc|i386_efi)"
+                        r"-CD\.iso",
+          {"multiarch": "multiarch", "x86_64_efi": "x86_64-efi", "i386_pc": "i386-pc", "i386_efi": "i386-efi"}),
+    _Rule("hrmpf", rf"hrmpf-x86_64-{DATE8}\.iso", "standard"),
+    _Rule("caine", r"caine(?P<v>\d+\.\d+)\.iso", "standard"),
+
+    _Rule("linuxlite", r"linux-lite-(?P<v>\d+\.\d+)-64bit\.iso", "standard"),
+    _Rule("freebsd", r"FreeBSD-(?P<v>\d+\.\d+)-RELEASE-amd64-(?P<f>disc1|dvd1|bootonly)\.iso",
+          _same("disc1", "dvd1", "bootonly")),
+    _Rule("ipfire", r"ipfire-(?P<v>\d+\.\d+)-core(?P<c>\d+)-x86_64\.iso", "standard",
+          version="{v} Core {c}"),
+    _Rule("oracle", r"OracleLinux-R(?P<r>\d+)-U(?P<u>\d+)-x86_64-(?P<f>dvd|boot)\.iso",
+          _same("dvd", "boot"), version="{r}.{u}"),
+    # VEIM's own name for it: upstream calls every release "metal-amd64.iso".
+    _Rule("talos", rf"talos-{V}-metal-amd64\.iso", "metal"),
+    _Rule("centos", r"CentOS-Stream-(?P<s>\d+)-(?P<c>\d{8}\.\d+)-x86_64-(?P<f>dvd1|boot)\.iso",
+          {"dvd1": "dvd", "boot": "boot"}, version="{s} ({c})"),
+    _Rule("xcpng", r"xcp-ng-(?P<v>\d+\.\d+\.\d+)-(?P<b>\d{8}(?:\.\d+)?)(?P<n>-netinstall)?\.iso",
+          lambda m: "netinstall" if m.group("n") else "standard", version="{v} ({b})"),
+    _Rule("openeuler", r"openEuler-(?P<v>\d\d\.\d\d(?:-LTS(?:-SP\d+)?)?)(?P<n>-netinst)?-x86_64-dvd\.iso",
+          lambda m: ("lts" if "lts" in m.group("v").lower() else "innovation")
+                    + ("-netinst" if m.group("n") else "")),
 
     _Rule("puppy", rf"BookwormPup64_{V}\.iso", "bookworm"),
     _Rule("puppy", rf"fossapup64-{V}\.iso", "fossa"),
     _Rule("puppy", rf"Trixiepup64_Wayland-{V}\.iso", "trixie"),
-    _Rule("tinycore", rf"(?P<f>CorePlus|TinyCore|CorePure64)-{V}\.iso",
-          _same("coreplus", "tinycore", "corepure64")),
-    _Rule("alpine", rf"alpine-(?P<f>standard|extended)-{V}-x86_64\.iso",
-          _same("standard", "extended")),
+    _Rule("tinycore", rf"(?P<f>CorePlus|TinyCorePure64|TinyCore|CorePure64|Core)-{V}\.iso",
+          _same("coreplus", "tinycorepure64", "tinycore", "corepure64", "core")),
+    _Rule("alpine", rf"alpine-(?P<f>standard|extended|virt|xen)-{V}-x86_64\.iso",
+          _same("standard", "extended", "virt", "xen")),
+    # The rolling line is numbered by year and month, the stable one like Debian.
+    _Rule("sparky", r"sparkylinux-(?P<v>\d{4}\.\d{2})-x86_64-(?P<f>xfce|kde|lxqt|mate|minimalgui"
+                    r"|minimalcli|gameover|multimedia|rescue)\.iso",
+          lambda m: "rolling-" + m.group("f").lower()),
     _Rule("sparky", rf"sparkylinux-{V}-x86_64-(?P<f>xfce|kde|lxqt|mate|minimalgui|minimalcli)\.iso",
           _same("xfce", "kde", "lxqt", "mate", "minimalgui", "minimalcli")),
     _Rule("antix", rf"antiX-{V}_x64-(?P<f>full|core)\.iso", _same("full", "core")),
