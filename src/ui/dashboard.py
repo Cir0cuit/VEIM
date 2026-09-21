@@ -613,7 +613,9 @@ class DashboardView(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
-            self.inventory_mgr.remove_item(item.key, item.flavor_id, delete_file=True)
+            # By the row's own key: two ISOs can share a distro and flavor, and
+            # looking the record up by those removed the other one's file.
+            self.inventory_mgr.remove_entry(self._key_of(card), delete_file=True)
             self.refresh_installed_list()
 
     def apply_theme(self, colors: ThemeColors = None):

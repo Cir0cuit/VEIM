@@ -199,7 +199,16 @@ class InventoryManager:
         self.save()
 
     def remove_item(self, key: str, flavor_id: str = "", delete_file: bool = True) -> bool:
-        ck = self._composite_key(key, flavor_id)
+        return self.remove_entry(self._composite_key(key, flavor_id), delete_file)
+
+    def remove_entry(self, ck: str, delete_file: bool = True) -> bool:
+        """Remove the record stored under `ck`, an inventory key as found in `items`.
+
+        A distro and flavor do not always name one record: sync_filesystem()
+        files a second ISO that guesses to the same pair under a longer key.
+        Looking that one up by distro and flavor finds the first ISO instead,
+        and deletes its file.
+        """
         item = self.items.get(ck)
         if not item:
             return False

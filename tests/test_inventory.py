@@ -101,3 +101,20 @@ def test_two_isos_guessing_same_key_both_survive(drive_root, make_iso):
 
     names = sorted(i.filename for i in inv.get_all_items())
     assert len(names) == 2, f"an ISO was dropped: {names}"
+
+
+def test_removing_a_second_iso_of_the_same_distro_removes_that_one(drive_root, make_iso, managed_dir):
+    """Regression: two ISOs can guess to the same distro and flavor, and the
+    second is filed under a longer key. Removing it by distro and flavor found
+    the first ISO instead, and deleted the wrong file."""
+    first = make_iso("archlinux-2026.03.01-x86_64.iso")
+    second = make_iso("archlinux-2026.09.01-x86_64.iso")
+    inv = InventoryManager(drive_root)
+    by_file = {item.filename: ck for ck, item in inv.items.items()}
+    assert len(by_file) == 2
+
+    assert inv.remove_entry(by_file[second])
+
+    assert not os.path.exists(os.path.join(managed_dir, second))
+    assert os.path.exists(os.path.join(managed_dir, first)), "the other ISO was deleted"
+    assert [i.filename for i in inv.get_all_items()] == [first]

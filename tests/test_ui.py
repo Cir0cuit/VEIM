@@ -686,6 +686,33 @@ def test_cancel_while_starting_does_not_start_the_download(workspace, qapp, tmp_
     assert ck not in ws.library.active_tasks
 
 
+def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp_path, monkeypatch):
+    """Regression: with two ISOs of one distro on the drive, Remove on the
+    second row asked about the second and then deleted the first."""
+    from PySide6.QtWidgets import QMessageBox
+
+    ws = workspace
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    first = managed / "archlinux-2026.03.01-x86_64.iso"
+    second = managed / "archlinux-2026.09.01-x86_64.iso"
+    first.write_bytes(b"iso")
+    second.write_bytes(b"iso")
+    ws.library.inventory_mgr.sync_filesystem()
+    ws.library.refresh_installed_list()
+    assert len(ws.library.cards) == 2
+
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **kw: QMessageBox.StandardButton.Yes)
+    card = next(c for c in ws.library.cards.values() if c.item.filename == second.name)
+    card.btn_remove.click()
+    qapp.processEvents()
+
+    assert not second.exists()
+    assert first.exists(), "Remove deleted a different ISO than the one clicked"
+    assert [c.item.filename for c in ws.library.cards.values()] == [first.name]
+
+
 # ------------------------------------------------------ check all updates
 
 @pytest.fixture
