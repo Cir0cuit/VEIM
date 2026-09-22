@@ -5,14 +5,17 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 460 tests, no network and no display needed
-pytest -m network       # also resolve all 139 editions against live mirrors
+pytest                  # 720-odd tests, no network and no display needed
+pytest -m network       # also resolve all 216 editions against live mirrors
 ```
 
 The offline suite runs headless on Qt's `offscreen` platform, and is what CI
 runs on Linux, Windows and macOS across Python 3.10 and 3.12. Network tests are
 excluded by default — a mirror having a bad day should not fail your build. Run
-them when you suspect scraper rot: they fail with the distribution named.
+them when you suspect scraper rot: they fail with the distribution named. The
+live sweep also fails when a recipe reports a label ("latest", "current") in
+place of a version, and when the filename a recipe would write is one that
+`iso_identity` reads back as a different entry, edition or version.
 
 Work happens on `dev`. `main` is what gets tagged and released.
 
@@ -26,22 +29,29 @@ src/
 │   ├── branding.py        VEIM's own icon, and the Windows taskbar identity
 │   ├── drive.py           cross-platform removable and Ventoy drive detection
 │   ├── downloader.py      resumable transfers, SHA-256, archives, rate metering
-│   ├── inventory.py       what is on the drive, reconciled against the filesystem
-│   ├── ventoy_config.py   ventoy.json alias management
-│   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError
-│   ├── icons.py           logo fetching, rasterising and High-DPI caching
+│   ├── inventory.py       what is on the drive, reconciled against the filesystem;
+│   │                      adoption candidates and exclusions
+│   ├── iso_identity.py    which official download a filename is, if any
+│   ├── ventoy_config.py   ventoy.json aliases and the search root
+│   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError, is_older
+│   ├── icons.py           logo sources, rasterising and High-DPI caching
 │   ├── app_update.py      whether a newer VEIM has been released
 │   ├── browser.py         opening a link without the bundle's environment
 │   └── logger.py
 ├── recipes/               one module per distribution family
 │   └── registry.py        registration and the catalog taxonomy
-├── assets/branding/       VEIM's own mark, plus the few bundled distro logos
+├── assets/
+│   ├── branding/          VEIM's own mark
+│   └── icons/             one rendered logo per catalog entry, shipped
 └── ui/
     ├── theme.py           palettes and the entire stylesheet
     ├── components.py      shared widgets: rows, chips, flow layout, combo box
     ├── sidebar.py         navigation and drive summary
     ├── drive_picker.py    startup drive chooser
     ├── dashboard.py       installed library and download orchestration
+    ├── distro_card.py     one installed row: check, update in place, remove
+    ├── downloading_card.py  a fresh install that has no row yet
+    ├── adopt_dialog.py    choosing which loose ISOs to take in
     ├── catalog_view.py    browsable catalog
     ├── update_prompt.py   the automatic check, and the dialog it raises
     ├── update_button.py   the drive picker's "Check for VEIM Updates"
@@ -67,10 +77,34 @@ there — registration fails loudly if the entry is missing.
 cannot determine a current release. Never return a hardcoded URL as a fallback;
 the suite checks for it. Supply `sha256` when the project publishes one.
 
+The version it reports is the one the user sees on the row and the one a later
+check is compared against, so it has to be the release itself, found fresh each
+time:
+
+- Read the release listing and take the newest by numeric sort — not the
+  first link on the page, not a folder pinned in the source.
+- Never report a label. "latest", "current" and "stable" are not versions,
+  and a row carrying one can never be told it is out of date.
+- On a network error, raise. Falling back to an older release that happened
+  to be reachable reports a stale version as current, which is worse than
+  no answer; "No current release" on the row is the honest outcome.
+- If the image's filename does not carry the version (Bazzite, Talos), rename
+  it on the way down so that it does.
+
+Then add a rule to `src/core/iso_identity.py` that reads that filename back
+into the same key, flavor id and version — exact pattern, whole name. That is
+what lets an ISO a user copied onto the drive be recognised and adopted, and
+`pytest -m network` fails when a recipe's filename and its rule disagree.
+Names that never change between releases get no rule on purpose.
+
 Add an entry to `ICON_URLS` in `src/core/icons.py`, then run
 `python tools/fetch_icons.py` and commit the PNG it writes to
 `src/assets/icons/`. The app ships its logos rather than fetching them, and the
 suite fails if a distribution has none.
+
+Finally `python tools/readme_catalog.py --write`: the README's counts, category
+table and edition list are generated from the registry, and a test fails when
+they lag behind it.
 
 ## Adding a theme
 
@@ -123,6 +157,7 @@ files go, and a test fails if the spec stops bundling an asset the app reads.
 |---|---|
 | `tools/fetch_icons.py` | Renders the distribution logos in `ICON_URLS` into `src/assets/icons/`, which is committed and shipped. Checks each result: Qt renders a subset of SVG and fails silently on the rest, writing a blank image rather than none. |
 | `tools/build_icons.py` | Renders `src/assets/branding/veim.svg` into the PNG, `.ico` and `.icns` files the app and the installers use. Run it after editing the SVG. |
-| `tools/capture_docs_screenshots.py` | Regenerates the images the README embeds, from a scripted drive. Refuses to save if the sidebar shows a real path instead of `K:\`. |
+| `tools/capture_docs_screenshots.py` | Regenerates the images the README embeds, from a scripted drive that puts a row in every state, plus the adoption dialog. Refuses to save if the sidebar shows a real path instead of `K:\`. Needs a display. |
+| `tools/readme_catalog.py` | Prints the README's catalog section from the registry; `--write` puts it in place. |
 | `tools/capture_ui_screenshots.py` | Renders the UI to `screenshots/` for local inspection. Not for documentation — the captures show a real path. |
 | `tools/audit_icons.py` | Compares each Wikimedia logo against Wikimedia's own rendering of the same file. Run it after adding an SVG: Qt renders a subset of SVG and fails silently on the rest, producing a wrong image rather than none. |

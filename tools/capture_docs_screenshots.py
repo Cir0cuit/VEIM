@@ -1,8 +1,10 @@
 r"""Render the screenshots the README embeds.
 
-Builds one drive carrying every update state: two ISOs with newer releases
-upstream, two already current, one whose mirror could not be reached, and one
-transfer in flight.
+Builds one drive carrying every state a row can be in: a release that has
+moved on, an update running in place, a fresh install on its way, two ISOs
+already current, one whose mirror could not be reached. Beside the managed
+ones sit two ISOs copied on by hand that VEIM offers to adopt, and one it
+does not recognise and leaves alone.
 
 The sidebar is made to report K:\ rather than the throwaway temporary
 directory the ISOs actually live in, so the images carry no local path. The
@@ -26,6 +28,7 @@ from PySide6.QtWidgets import QApplication
 
 from src.core.downloader import DownloadTask
 from src.core.drive import DriveDetector, DriveInfo
+from src.ui.adopt_dialog import AdoptDialog
 from src.ui.app import VEIMMainWindow
 from src.ui.dashboard import DashboardView
 from src.ui.downloading_card import DownloadingCard
@@ -55,6 +58,25 @@ INSTALLED = [
      1_500_000_000, None),
 ]
 
+# The row whose update is in flight.
+UPDATING = ("mint", "cinnamon")
+
+# Copied onto the drive by hand. The first two are named like official
+# downloads and are offered for adoption; the last is not, and is left alone.
+LOOSE = [
+    ("debian-live-13.1.0-amd64-kde.iso", 3_300_000_000),
+    ("caine14.0.iso", 4_900_000_000),
+    ("clonezilla-office-custom.iso", 500_000_000),
+]
+
+
+def make_task(total_mb: int, fraction: float, speed: float, eta: int) -> DownloadTask:
+    task = DownloadTask("https://example.invalid/x.iso", "x.iso")
+    task.total_bytes = total_mb * 1024 ** 2
+    task.downloaded_bytes = int(task.total_bytes * fraction)
+    task.speed_mbps, task.eta_seconds = speed, eta
+    return task
+
 
 def build(app, theme: str, page: str):
     theme_manager.set_theme(theme)
@@ -65,6 +87,9 @@ def build(app, theme: str, page: str):
     for _, _, _, _, filename, _, _ in INSTALLED:
         with open(os.path.join(managed, filename), "wb") as handle:
             handle.write(b"iso")
+    for filename, size in LOOSE:
+        with open(os.path.join(managed, filename), "wb") as handle:
+            handle.truncate(size)
 
     # Downloads must never actually start while capturing.
     DashboardView._worker_fetch_and_start_download = lambda *a, **kw: None
@@ -85,12 +110,10 @@ def build(app, theme: str, page: str):
             filename=filename, size_bytes=size, sha256="",
             url="https://example.invalid/x.iso")
 
+    # A fresh install from the catalog has no row yet, so it gets a card of
+    # its own above the list.
     card = DownloadingCard("ubuntu", "Ubuntu", "Desktop", on_cancel=lambda: None)
-    task = DownloadTask("https://example.invalid/u.iso", "u.iso")
-    task.total_bytes = 4800 * 1024 ** 2
-    task.downloaded_bytes = int(task.total_bytes * 0.38)
-    task.speed_mbps, task.eta_seconds = 24.6, 122
-    card.update_progress(task)
+    card.update_progress(make_task(4800, 0.38, 24.6, 122))
     library.download_cards["ubuntu::desktop"] = card
     library.download_layout.addWidget(card)
     library.lbl_downloads.show()
@@ -108,6 +131,12 @@ def build(app, theme: str, page: str):
             continue
         row.set_status_result(latest if latest else "Unavailable", "")
 
+    # An update replaces a file that has a row: that row shows the transfer.
+    row = library.cards[library.inventory_mgr._composite_key(*UPDATING)]
+    row.begin_download()
+    row.update_progress(make_task(2800, 0.61, 31.2, 35))
+    library._refresh_subtitle()
+
     workspace.go_to(page)
     pump(app)
 
@@ -122,6 +151,22 @@ def build(app, theme: str, page: str):
             f"refusing to save: the sidebar reads {shown!r}, not {DRIVE_LABEL!r}"
         )
     return window, workdir
+
+
+def build_adopt_dialog(app, window) -> AdoptDialog:
+    """The dialog behind the library's "Adopt ISOs" button, as it opens."""
+    library = window.centralWidget().library
+    candidates = sorted(library._adoptable(include_excluded=True), key=lambda c: c.excluded)
+    listed = {c.filename for c in candidates}
+    unrecognised = len([f for f in library.inventory_mgr.unmanaged_files() if f not in listed])
+    if not candidates or not unrecognised:
+        raise SystemExit("the loose ISOs did not produce both an adoptable and an unknown one")
+    dialog = AdoptDialog(candidates, {c.filename: library._display_name(c) for c in candidates},
+                         unrecognised=unrecognised, parent=window)
+    dialog.resize(820, 420)
+    dialog.show()
+    pump(app)
+    return dialog
 
 
 def pump(app, times: int = 8):
@@ -146,10 +191,18 @@ def main() -> int:
         window, workdir = build(app, theme, page)
         path = os.path.join(OUT_DIR, filename)
         window.grab().save(path, "PNG")
+        print(f"[OK] {path}  ({theme}, {page})")
+
+        if filename == "library.png":
+            dialog = build_adopt_dialog(app, window)
+            path = os.path.join(OUT_DIR, "adopt.png")
+            dialog.grab().save(path, "PNG")
+            dialog.close()
+            print(f"[OK] {path}  ({theme}, adopt dialog)")
+
         window.close()
         pump(app)
         shutil.rmtree(workdir, ignore_errors=True)
-        print(f"[OK] {path}  ({theme}, {page})")
     return 0
 
 
