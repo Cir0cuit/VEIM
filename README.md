@@ -325,6 +325,69 @@ rendered logos and the note of which VEIM release you skipped, in
 `%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or
 `~/Library/Application Support/VEIM`.
 
+## Troubleshooting
+
+**Downloads are slow.** Two things set the pace: your internet connection and
+how fast the USB stick can write. VEIM streams each ISO straight onto the
+drive, so it can never go faster than the stick accepts data — and cheap or
+older sticks often manage 10–30 MB/s on sustained writes, whatever the box
+says. Several downloads at once share both the connection and the stick, so
+each one shows a lower speed than it would alone; the total is the same. A
+slow mirror is the third possibility: VEIM downloads from the project's own
+official mirror, and some are simply busier than others.
+
+**"Connection lost, retrying in 10 s."** The link dropped. VEIM waits and
+reconnects on its own — 2, 5, 10, then 20 seconds — and resumes from where it
+stopped. A download only fails after four attempts in a row that get
+nowhere. If it does, press **Download** or **Update** again: the partial file
+is still there and the transfer resumes from it.
+
+**"No current release."** VEIM could not read that project's download page
+just now — a mirror is down, or the page has changed. The ISO on your drive is
+fine to boot. Try again later; if it stays that way for days, the recipe
+probably needs updating for a redesigned page — please
+[open an issue](https://github.com/Cir0cuit/VEIM/issues).
+
+**"Not enough space on drive."** The figure counts what the downloads
+already running still have to write, so a drive that looks half empty can be
+fully spoken for. Wait for them to finish, or cancel one. For an update that
+would fit only in the old ISO's place, VEIM offers to delete the old one
+first — read that dialog before accepting it.
+
+**A download failed its checksum.** The file was deleted on purpose: what
+arrived did not match what the project published, and a corrupt ISO fails at
+boot in far more confusing ways. Download it again. If it fails twice, the
+mirror is serving a bad file — that happens, and usually fixes itself.
+
+**The drive is not in the list.** Only mounted drives are offered. Plug it
+in, wait for the system to mount it, press **Refresh**. If it still isn't
+there, **Browse Folder…** straight to it. A "small partition" warning means
+you picked Ventoy's EFI partition; choose the large one.
+
+**An ISO I copied on isn't offered for adoption.** VEIM adopts only a file
+named exactly the way the project publishes it — that is how it knows which
+version you have. A renamed or customised ISO, or one from a project not in
+the catalog, is left alone on purpose. Images whose filename never changes
+(`netboot.xyz.iso`, Bazzite's `-stable`) can't be told apart from older
+copies, so they are never adopted either; downloading them through the
+catalog instead gives VEIM a version to track.
+
+**An ISO in the drive root disappeared from the boot menu.** Once VEIM has
+written `ventoy/ventoy.json`, Ventoy lists `Managed_ISOs/` only. The library
+notices ISOs left in the root and offers to move them in; that's all it
+takes. They are not managed afterwards, just visible again.
+
+**I edited `ventoy.json` by hand and my aliases vanished.** Aliases for files
+in `Managed_ISOs/` are VEIM's to write; it regenerates them from the library.
+Aliases for files anywhere else on the drive are kept exactly as you wrote
+them.
+
+**Something else went wrong.** The log is `veim.log` in
+`%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or
+`~/Library/Application Support/VEIM` (next to `main.py` when running from
+source). It says what VEIM asked for, what it got back, and why it stopped.
+Attach it to an [issue](https://github.com/Cir0cuit/VEIM/issues).
+
 ## Themes
 
 Dark Modern, Amoled Black, Gruvbox Dark, Cyberpunk, Nord, Dracula, Solarized
