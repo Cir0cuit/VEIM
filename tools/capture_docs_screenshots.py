@@ -141,7 +141,9 @@ def build(app, theme: str, page: str):
     pump(app)
 
     # Last, because a drive refresh would otherwise put the temp path back.
-    workspace.sidebar.set_drive(DRIVE_LABEL, DRIVE_FREE_GB, DRIVE_TOTAL_GB)
+    # The two transfers above have about 4 GB still to write between them.
+    workspace._poll.stop()
+    workspace.sidebar.set_drive(DRIVE_LABEL, DRIVE_FREE_GB, DRIVE_TOTAL_GB, reserved_gb=4.0)
     pump(app)
 
     # These images go into the repository.

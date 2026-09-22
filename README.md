@@ -275,7 +275,9 @@ that download — the library shows an **Adopt ISOs** button, and you decide.
 
 A renamed, customised or unrecognised ISO is never listed, tracked or touched.
 It boots as usual; the library just notes how many such files it is leaving
-alone. That's deliberate: a customised Clonezilla mistaken for the official one
+alone. If any of those sit in the drive root, where Ventoy no longer looks
+once VEIM has set it up, you are offered a plain move into `Managed_ISOs/`
+right after adopting — so they come back into the boot menu, still unmanaged. That's deliberate: a customised Clonezilla mistaken for the official one
 would be "updated" — overwritten — at the next check.
 
 **Remove** on any row asks which you mean: **Delete File**, or **Keep File,
@@ -292,10 +294,12 @@ stops checking it. That's also the way out for an ISO adopted by mistake.
   you.
 - **Space-checked.** Free space is confirmed before a single byte is written,
   counting what the downloads already running still have to write. Six
-  transfers started at once cannot overfill the drive between them. When an
-  update would fit only in the old ISO's place, VEIM asks before deleting the
-  old one first — and says plainly that a download that then fails leaves
-  neither on the drive.
+  transfers started at once cannot overfill the drive between them. The drive
+  gauge in the sidebar shows that space as spoken for, and re-reads the drive
+  every couple of seconds while anything is downloading. When an update would
+  fit only in the old ISO's place, VEIM asks before deleting the old one first
+  — and says plainly that a download that then fails leaves neither on the
+  drive.
 - **Always the current release.** VEIM never downloads from a URL it
   remembered. Every transfer starts by reading the project's own release page
   at that moment and taking the newest release by version number — never a

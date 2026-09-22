@@ -676,6 +676,11 @@ def _component_stylesheet(c: ThemeColors) -> str:
         border: none;
         border-radius: 3px;
     }}
+    QFrame#capacityReserved {{
+        background-color: {c.text_muted};
+        border: none;
+        border-radius: 3px;
+    }}
     QFrame#capacityFillWarn {{
         background-color: {c.warning};
         border: none;

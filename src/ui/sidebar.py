@@ -100,6 +100,14 @@ class Sidebar(QWidget):
         root.addSpacing(6)
         root.addWidget(self.lbl_space)
 
+        # What the transfers in flight are still going to take. Shown only
+        # while there are any, so the summary stays one line the rest of the time.
+        self.lbl_reserved = QLabel("")
+        self.lbl_reserved.setObjectName("rowMeta")
+        self.lbl_reserved.setWordWrap(True)
+        self.lbl_reserved.hide()
+        root.addWidget(self.lbl_reserved)
+
         root.addSpacing(12)
         self.btn_change = make_button("Change Drive", "ghost", self.change_drive.emit)
         root.addWidget(self.btn_change)
@@ -119,13 +127,22 @@ class Sidebar(QWidget):
         if btn:
             btn.setChecked(True)
 
-    def set_drive(self, path: str, free_gb: float = 0.0, total_gb: float = 0.0):
+    def set_drive(self, path: str, free_gb: float = 0.0, total_gb: float = 0.0,
+                  reserved_gb: float = 0.0):
+        """`reserved_gb` is what running downloads have still to write: it
+        is shown as spoken for, and the free figure is what is left after it."""
         self.lbl_drive.setFullText(path or "No drive")
         if total_gb > 0:
             used = total_gb - free_gb
-            self.capacity.set_used_fraction(used / total_gb)
-            self.lbl_space.setText(f"{free_gb:.1f} GB free of {total_gb:.0f} GB")
+            reserved = max(0.0, min(reserved_gb, free_gb))
+            self.capacity.set_used_fraction(used / total_gb, reserved / total_gb)
+            left = free_gb - reserved
+            self.lbl_space.setText(f"{left:.1f} GB free of {total_gb:.0f} GB")
+            self.lbl_reserved.setText(
+                f"{reserved:.1f} GB reserved for downloads" if reserved > 0 else "")
+            self.lbl_reserved.setVisible(reserved > 0)
             self.capacity.show()
         else:
             self.capacity.hide()
             self.lbl_space.setText("")
+            self.lbl_reserved.hide()

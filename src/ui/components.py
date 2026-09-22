@@ -322,7 +322,11 @@ class Pill(QLabel):
 
 
 class CapacityBar(QWidget):
-    """Horizontal used/free indicator for a drive."""
+    """Horizontal used/free indicator for a drive.
+
+    A second, muted segment after the used one is space that downloads in
+    flight are going to take: not used yet, not free either.
+    """
 
     def __init__(self, height: int = 6, parent=None):
         super().__init__(parent)
@@ -331,16 +335,25 @@ class CapacityBar(QWidget):
 
         self._track = QFrame(self)
         self._track.setObjectName("capacityTrack")
+        # Drawn first, so the used fill sits on top of it: the two together
+        # read as one bar with a paler tail.
+        self._reserved = QFrame(self._track)
+        self._reserved.setObjectName("capacityReserved")
+        self._reserved.hide()
         self._fill = QFrame(self._track)
         self._fill.setObjectName("capacityFill")
         self._ratio = 0.0
+        self._reserved_ratio = 0.0
 
-    def set_used_fraction(self, fraction: float):
+    def set_used_fraction(self, fraction: float, reserved: float = 0.0):
         self._ratio = max(0.0, min(1.0, fraction))
+        self._reserved_ratio = max(0.0, min(1.0 - self._ratio, reserved))
         # Near-full drives read as a warning rather than "more blue is better".
-        self._fill.setObjectName("capacityFillWarn" if self._ratio > 0.9 else "capacityFill")
+        committed = self._ratio + self._reserved_ratio
+        self._fill.setObjectName("capacityFillWarn" if committed > 0.9 else "capacityFill")
         self._fill.style().unpolish(self._fill)
         self._fill.style().polish(self._fill)
+        self._reserved.setVisible(self._reserved_ratio > 0)
         self._relayout()
 
     def resizeEvent(self, event):
@@ -348,8 +361,11 @@ class CapacityBar(QWidget):
         self._relayout()
 
     def _relayout(self):
-        self._track.setGeometry(0, 0, self.width(), self.height())
-        self._fill.setGeometry(0, 0, int(self.width() * self._ratio), self.height())
+        width, height = self.width(), self.height()
+        self._track.setGeometry(0, 0, width, height)
+        self._fill.setGeometry(0, 0, int(width * self._ratio), height)
+        self._reserved.setGeometry(
+            0, 0, int(width * (self._ratio + self._reserved_ratio)), height)
 
 
 BUTTON_OBJECT_NAMES = {

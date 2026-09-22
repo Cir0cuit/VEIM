@@ -19,7 +19,7 @@ from src.core.inventory import InventoryManager, InventoryItem, AdoptionCandidat
 from src.core.drive import DriveDetector
 from src.recipes.registry import registry
 from src.core.recipe_base import DistroRecipe, ScrapeError
-from src.core.downloader import DownloadTask, free_for_download, probe_size
+from src.core.downloader import DownloadTask, free_for_download, probe_size, reserved_bytes
 from src.core.logger import log
 from src.ui.theme import theme_manager, ThemeColors
 from src.ui.components import make_button, EmptyState
@@ -274,6 +274,7 @@ class DashboardView(QWidget):
             QMessageBox.warning(
                 self, "Could not adopt",
                 "These could not be moved into Managed_ISOs:\n\n" + "\n".join(failed))
+        self._offer_hidden_move()
 
     def drive_stats(self):
         """(free_gb, total_gb) for the sidebar, or (0, 0) if unavailable."""
@@ -281,6 +282,37 @@ class DashboardView(QWidget):
         if info:
             return info.free_gb, info.total_gb
         return 0.0, 0.0
+
+    @staticmethod
+    def reserved_gb() -> float:
+        """What the transfers in flight have still to write, in GB."""
+        return reserved_bytes() / (1024 ** 3)
+
+    def _offer_hidden_move(self):
+        """After adoption: ISOs left in the drive root that Ventoy no longer
+        lists. Adopting moved the recognised ones; these are the rest."""
+        hidden = self.inventory_mgr.hidden_root_isos()
+        if hidden and self._ask_move_hidden(hidden):
+            self._move_hidden_isos()
+
+    def _ask_move_hidden(self, hidden: List[str]) -> bool:
+        count = len(hidden)
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("ISOs missing from the boot menu")
+        box.setText(
+            f"{count} ISO{'s' if count != 1 else ''} in the drive root "
+            f"{'are' if count != 1 else 'is'} not in the Ventoy boot menu.")
+        box.setInformativeText(
+            "VEIM sets Ventoy to look in Managed_ISOs only. Moving them in brings "
+            "them back into the menu. They are not recognised, so VEIM will not "
+            "manage them: they are not checked, updated or changed.\n\n"
+            + "\n".join(hidden))
+        move = box.addButton("Move Into Managed_ISOs", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Leave Them", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(move)
+        box.exec()
+        return box.clickedButton() is move
 
     # ------------------------------------------------------------- listing
 

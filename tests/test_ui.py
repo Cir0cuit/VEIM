@@ -396,6 +396,9 @@ def workspace(themed, qapp, tmp_path, monkeypatch):
 
     monkeypatch.setattr(DashboardView, "_worker_fetch_and_start_download",
                         lambda *a, **kw: None)
+    # The post-adoption offer to move root ISOs in is a modal box; a test
+    # that wants it answered yes patches this itself.
+    monkeypatch.setattr(DashboardView, "_ask_move_hidden", lambda self, hidden: False)
 
     ws = Workspace(drive_path=str(tmp_path), on_change_drive=lambda: None)
     ws.resize(1180, 760)
@@ -1356,3 +1359,122 @@ def test_a_transfer_cancelled_while_its_size_was_looked_up_never_asks(installed,
 
     assert asked == []
     assert old.exists()
+
+
+# ------------------------------------------------- space spoken for
+
+def test_capacity_bar_shows_reserved_space_after_the_used_part(themed):
+    from src.ui.components import CapacityBar
+    bar = CapacityBar()
+    bar.resize(100, 6)
+
+    bar.set_used_fraction(0.5)
+    assert bar._reserved.isHidden()
+
+    bar.set_used_fraction(0.5, 0.2)
+    assert not bar._reserved.isHidden()
+    assert bar._fill.width() == 50
+    assert bar._reserved.width() == 70, "the reserved segment extends the used one"
+
+    # It cannot promise more than the drive has.
+    bar.set_used_fraction(0.9, 0.5)
+    assert bar._reserved_ratio == pytest.approx(0.1)
+
+    # Used plus reserved is what counts as nearly full.
+    bar.set_used_fraction(0.6, 0.35)
+    assert bar._fill.objectName() == "capacityFillWarn"
+
+
+def test_sidebar_reports_space_reserved_for_downloads(themed):
+    from src.ui.sidebar import Sidebar
+    bar = Sidebar()
+
+    bar.set_drive("K:\\", free_gb=64.8, total_gb=119.2)
+    assert bar.lbl_space.text() == "64.8 GB free of 119 GB"
+    assert bar.lbl_reserved.isHidden()
+
+    bar.set_drive("K:\\", free_gb=64.8, total_gb=119.2, reserved_gb=4.2)
+    assert bar.lbl_space.text() == "60.6 GB free of 119 GB", "free is what is left after the downloads"
+    assert bar.lbl_reserved.text() == "4.2 GB reserved for downloads"
+    assert not bar.lbl_reserved.isHidden()
+    assert bar.capacity._reserved_ratio == pytest.approx(4.2 / 119.2)
+
+    bar.set_drive("K:\\", free_gb=64.8, total_gb=119.2, reserved_gb=0)
+    assert bar.lbl_reserved.isHidden()
+
+
+def test_sidebar_follows_the_downloads(installed, qapp, monkeypatch):
+    """The sidebar re-reads the drive when a transfer starts and ends, and
+    polls quickly while one runs."""
+    from src.ui import workspace as wsmod
+    from src.ui.dashboard import DashboardView
+    ws = installed
+    monkeypatch.setattr(DashboardView, "reserved_gb", staticmethod(lambda: 4.2))
+
+    assert ws._poll.isActive()
+    assert ws._poll.interval() == wsmod.POLL_IDLE_MS
+    assert ws.sidebar.lbl_reserved.isHidden(), "nothing has started yet"
+
+    _update(ws, qapp)
+    assert ws.sidebar.lbl_reserved.text() == "4.2 GB reserved for downloads"
+    assert ws._poll.interval() == wsmod.POLL_BUSY_MS
+
+    monkeypatch.setattr(DashboardView, "reserved_gb", staticmethod(lambda: 0.0))
+    ws.library._on_complete_slot("arch::standard", False, "gone")
+    qapp.processEvents()
+    assert ws.sidebar.lbl_reserved.isHidden()
+    assert ws._poll.interval() == wsmod.POLL_IDLE_MS
+
+
+def test_the_poll_itself_updates_the_sidebar(installed, qapp, monkeypatch):
+    from src.ui.dashboard import DashboardView
+    ws = installed
+    monkeypatch.setattr(DashboardView, "drive_stats", lambda self: (10.0, 100.0))
+    ws._poll.timeout.emit()
+    assert ws.sidebar.lbl_space.text() == "10.0 GB free of 100 GB"
+
+
+# ------------------------------------- root ISOs offered a move after adoption
+
+def test_adoption_offers_to_move_the_root_isos_it_left_behind(drive_with_loose_isos, qapp, tmp_path,
+                                                              monkeypatch):
+    from src.ui.dashboard import DashboardView
+    lib = drive_with_loose_isos.library
+    (tmp_path / "HBCD_PE_x64.iso").write_bytes(b"iso")
+    (tmp_path / "hdat2cd_76.iso").write_bytes(b"iso")
+
+    asked = []
+    monkeypatch.setattr(DashboardView, "_ask_move_hidden",
+                        lambda self, hidden: asked.append(sorted(hidden)) or True)
+    _adopt_everything(drive_with_loose_isos)
+    qapp.processEvents()
+
+    assert asked == [["HBCD_PE_x64.iso", "hdat2cd_76.iso"]]
+    assert (tmp_path / "Managed_ISOs" / "HBCD_PE_x64.iso").exists()
+    assert (tmp_path / "Managed_ISOs" / "hdat2cd_76.iso").exists()
+    assert lib.hidden_notice.isHidden()
+    assert "HBCD_PE_x64.iso" in lib.lbl_unmanaged.toolTip(), "moved in, still not managed"
+
+
+def test_declining_the_move_leaves_the_root_isos_and_the_notice(drive_with_loose_isos, qapp, tmp_path,
+                                                                monkeypatch):
+    from src.ui.dashboard import DashboardView
+    lib = drive_with_loose_isos.library
+    (tmp_path / "HBCD_PE_x64.iso").write_bytes(b"iso")
+    monkeypatch.setattr(DashboardView, "_ask_move_hidden", lambda self, hidden: False)
+
+    _adopt_everything(drive_with_loose_isos)
+    qapp.processEvents()
+
+    assert (tmp_path / "HBCD_PE_x64.iso").exists()
+    assert not lib.hidden_notice.isHidden(), "the library still offers the move"
+
+
+def test_adoption_does_not_ask_when_nothing_is_hidden(drive_with_loose_isos, qapp, monkeypatch):
+    from src.ui.dashboard import DashboardView
+    asked = []
+    monkeypatch.setattr(DashboardView, "_ask_move_hidden",
+                        lambda self, hidden: asked.append(hidden) or False)
+    _adopt_everything(drive_with_loose_isos)
+    qapp.processEvents()
+    assert asked == []
