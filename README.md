@@ -286,9 +286,13 @@ stops checking it. That's also the way out for an ISO adopted by mistake.
 
 ## Downloads you can rely on
 
-- **Resumable.** Downloads stream to a `.part` file. If the connection drops
-  VEIM retries; if you close VEIM, it picks up where it stopped next time you
-  press the button. Only cancelling on purpose throws the partial file away.
+- **Resumable.** Downloads stream to a `.part` file. If the connection drops,
+  VEIM waits and reconnects — 2, 5, 10, then 20 seconds, with the countdown
+  shown on the row — and resumes from where it stopped. A link that keeps
+  dropping but keeps delivering is never given up on; only four attempts in a
+  row that get nowhere end in a failure. If you close VEIM, the transfer picks
+  up where it stopped next time you press the button. Only cancelling on
+  purpose throws the partial file away.
 - **Verified.** Where a project publishes a SHA-256, the finished file is
   checked before it becomes a `.iso`. A mismatch is deleted, and the row tells
   you.

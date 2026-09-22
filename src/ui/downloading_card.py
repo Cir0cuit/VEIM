@@ -52,19 +52,24 @@ class DownloadingCard(Row):
             self.on_cancel()
 
     def update_progress(self, task: DownloadTask):
+        done = task.downloaded_bytes / (1024 ** 2)
         if task.total_bytes > 0:
             pct = int(task.downloaded_bytes / task.total_bytes * 100)
             self.progress.setRange(0, 100)
             self.progress.setValue(pct)
-            done = task.downloaded_bytes / (1024 ** 2)
             total = task.total_bytes / (1024 ** 2)
+            if task.note:
+                self.meta.setText(f"{task.note}  ·  {done:.0f} / {total:.0f} MB")
+                return
             self.meta.setText(
                 f"{pct}%  ·  {task.speed_mbps:.1f} MB/s  ·  "
                 f"{done:.0f} / {total:.0f} MB  ·  {fmt_eta(task.eta_seconds)} left"
             )
         else:
             self.progress.setRange(0, 0)
-            done = task.downloaded_bytes / (1024 ** 2)
+            if task.note:
+                self.meta.setText(f"{task.note}  ·  {done:.0f} MB")
+                return
             self.meta.setText(f"{done:.0f} MB  ·  {task.speed_mbps:.1f} MB/s")
 
     def show_error(self, err_msg: str):

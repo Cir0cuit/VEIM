@@ -167,6 +167,10 @@ class DistroCard(Row):
             pct = int(task.downloaded_bytes / task.total_bytes * 100)
             self.progress.setRange(0, 100)
             self.progress.setValue(pct)
+            if task.note:
+                # Between attempts: what is being waited for, not a speed of 0.
+                self.meta.setText(f"{task.note}  ·  {pct_text(task)}")
+                return
             self.meta.setText(
                 f"Downloading {pct}%  ·  {task.speed_mbps:.1f} MB/s  ·  "
                 f"{pct_text(task)}  ·  {fmt_eta(task.eta_seconds)} left"

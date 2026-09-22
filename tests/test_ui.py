@@ -1478,3 +1478,29 @@ def test_adoption_does_not_ask_when_nothing_is_hidden(drive_with_loose_isos, qap
     _adopt_everything(drive_with_loose_isos)
     qapp.processEvents()
     assert asked == []
+
+
+# ------------------------------------------------------- retries on the row
+
+def test_rows_show_the_retry_countdown_instead_of_a_dead_speed(themed):
+    from src.ui.distro_card import DistroCard
+    from src.ui.downloading_card import DownloadingCard
+
+    task = _task(1056, 4800, speed=0.0, eta=0)
+    task.note = "Connection lost, retrying in 5 s (2 of 4)"
+
+    row = DistroCard(_item(), lambda *a: None, lambda *a: None, lambda *a: None)
+    row.begin_download()
+    row.update_progress(task)
+    assert row.meta.text().startswith("Connection lost, retrying in 5 s (2 of 4)")
+    assert "0.0 MB/s" not in row.meta.text()
+    assert row.progress.value() == 22, "the bar keeps what was fetched"
+
+    card = DownloadingCard("ubuntu", "Ubuntu", "Desktop")
+    card.update_progress(task)
+    assert card.meta.text().startswith("Connection lost, retrying in 5 s (2 of 4)")
+    assert "1056 / 4800 MB" in card.meta.text()
+
+    task.note = ""
+    row.update_progress(task)
+    assert row.meta.text().startswith("Downloading 22%")

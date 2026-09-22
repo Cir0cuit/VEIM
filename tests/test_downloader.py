@@ -302,16 +302,119 @@ def test_free_space_counts_the_downloads_already_running(tmp_path, monkeypatch):
     assert third_outcome["ok"], third_outcome
 
 
-def test_a_failed_transfer_gives_its_space_back(tmp_path, monkeypatch):
-    import threading
+def test_a_failed_transfer_gives_its_space_back(tmp_path, quick_retries):
     from src.core import downloader
 
     class Boom:
         def get(self, *a, **kw): raise OSError("no route to host")
 
-    monkeypatch.setattr(downloader.time, "sleep", lambda s: None)
     task = DownloadTask("https://example.invalid/x.iso", str(tmp_path / "x.iso"), session=Boom())
     done, outcome = _start(task)
     assert done.wait(10)
     assert not outcome["ok"]
     assert downloader.reserved_bytes() == 0
+
+
+# ------------------------------------------------------------------ retries
+
+class _FlakyServer:
+    """Serves `payload` in pieces, dropping the connection after each piece
+    for the first `drops` requests. Honours Range, like a real mirror."""
+
+    def __init__(self, payload: bytes, piece: int, drops: int):
+        self.payload, self.piece, self.drops = payload, piece, drops
+        self.requests = 0
+
+    def get(self, url, headers=None, **kw):
+        self.requests += 1
+        start = int((headers or {}).get("Range", "bytes=0-")[6:-1] or 0)
+        drop = self.requests <= self.drops
+        server, body = self, self.payload[start:]
+
+        class Resp:
+            status_code = 206 if start else 200
+            headers = {"Content-Length": str(len(body))}
+            def raise_for_status(self): pass
+            def close(self): pass
+            def iter_content(self, chunk_size=1):
+                yield body[:server.piece]
+                if drop:
+                    import requests
+                    raise requests.exceptions.ConnectionError("link dropped")
+                yield body[server.piece:]
+        return Resp()
+
+
+@pytest.fixture
+def quick_retries(monkeypatch):
+    from src.core import downloader
+    monkeypatch.setattr(downloader, "RETRY_DELAYS_SECONDS", (0.01, 0.01, 0.01, 0.01))
+
+
+def test_an_interrupted_transfer_that_keeps_advancing_is_never_given_up_on(tmp_path, quick_retries):
+    """Regression: four attempts, each resuming further along, and the
+    fourth drop failed the download 'permanently' with 3.8 GB on disk."""
+    payload = os.urandom(20_000)
+    server = _FlakyServer(payload, piece=1_000, drops=15)     # far more than the retry budget
+    task = DownloadTask("https://example.invalid/u.iso", str(tmp_path / "u.iso"), session=server)
+    done, outcome = _start(task)
+    assert done.wait(30)
+    assert outcome["ok"], outcome
+    assert (tmp_path / "u.iso").read_bytes() == payload
+    assert server.requests == 16
+
+
+def test_a_transfer_getting_nowhere_is_retried_then_fails(tmp_path, quick_retries):
+    class Dead:
+        def __init__(self): self.requests = 0
+        def get(self, *a, **kw):
+            self.requests += 1
+            import requests
+            raise requests.exceptions.ConnectionError("no route to host")
+
+    dead = Dead()
+    task = DownloadTask("https://example.invalid/u.iso", str(tmp_path / "u.iso"), session=dead)
+    done, outcome = _start(task)
+    assert done.wait(30)
+    assert not outcome["ok"]
+    assert dead.requests == 5, "one attempt plus the four retries"
+
+
+def test_the_row_is_told_about_each_retry(tmp_path, monkeypatch):
+    from src.core import downloader
+    monkeypatch.setattr(downloader, "RETRY_DELAYS_SECONDS", (0.6, 0.01, 0.01, 0.01))
+    payload = os.urandom(3_000)
+    server = _FlakyServer(payload, piece=1_000, drops=1)
+    notes = []
+    task = DownloadTask("https://example.invalid/u.iso", str(tmp_path / "u.iso"), session=server)
+    import threading
+    done = threading.Event()
+    task.start_async(progress_callback=lambda t: notes.append(t.note),
+                     completion_callback=lambda ok, msg: done.set())
+    assert done.wait(30)
+    assert any(n.startswith("Connection lost, retrying in 1 s (1 of 4)") for n in notes), notes
+    assert any(n.startswith("Reconnecting (1 of 4)") for n in notes), notes
+    assert notes[-1] == "", "the note must clear once the transfer is moving again"
+    assert task.note == ""
+
+
+def test_cancel_during_the_retry_pause_stops_at_once(tmp_path, monkeypatch):
+    import threading
+    import time
+    from src.core import downloader
+    monkeypatch.setattr(downloader, "RETRY_DELAYS_SECONDS", (30, 30, 30, 30))
+    server = _FlakyServer(os.urandom(3_000), piece=1_000, drops=1)
+    task = DownloadTask("https://example.invalid/u.iso", str(tmp_path / "u.iso"), session=server)
+    done, outcome = _start(task)
+
+    deadline = time.monotonic() + 5
+    while not task.note and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert task.note.startswith("Connection lost")
+    started = time.monotonic()
+    task.cancel()
+    assert done.wait(5), "cancel did not end the wait"
+    assert time.monotonic() - started < 2
+    assert not outcome["ok"]
+    assert not (tmp_path / "u.iso.part").exists(), "a cancelled transfer keeps no partial file"
+    assert server.requests == 1, "cancel was answered by another attempt"

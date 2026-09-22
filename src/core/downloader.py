@@ -20,6 +20,14 @@ PROGRESS_INTERVAL_SECONDS = 0.5
 # Weight of a new ETA estimate against the running one.
 ETA_SMOOTHING = 0.2
 
+# Pauses before each retry of a transfer that stopped without making
+# progress. A dropped Wi-Fi link or a router coming back takes tens of
+# seconds; retrying four times inside six seconds was giving up in the
+# middle of that. An attempt that did move the file forward resets the
+# count: a flaky link that stalls every few hundred megabytes is not four
+# failures, it is one download that needs resuming.
+RETRY_DELAYS_SECONDS = (2, 5, 10, 20)
+
 # Bytes each running transfer still has to write, by task. A free-space check
 # that looked only at the disk let six downloads start at once onto a drive
 # with room for two: each one, on its own, fitted.
@@ -254,6 +262,9 @@ class DownloadTask:
         
         self.is_cancelled = False
         self.is_completed = False
+        # What the row shows in place of the speed while the transfer is
+        # between attempts: "Connection lost, retrying in 5 s (2 of 4)".
+        self.note = ""
         self.downloaded_bytes = 0
         self.total_bytes = 0
         self.speed_mbps = 0.0
@@ -299,12 +310,34 @@ class DownloadTask:
                 f"Available: {detail}")
         _reserve(self, remaining)
 
+    def _wait_before_retry(self, seconds: int, attempt: int, max_retries: int,
+                           progress_cb) -> bool:
+        """Pause before the next attempt, telling the row so. False if
+        cancelled meanwhile - a Cancel pressed during the wait must not be
+        answered by another attempt."""
+        self.speed_mbps = 0.0
+        self.eta_seconds = 0
+        deadline = time.monotonic() + seconds
+        while not self.is_cancelled:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                break
+            self.note = (f"Connection lost, retrying in {int(left) + 1} s "
+                         f"({attempt} of {max_retries})")
+            if progress_cb:
+                progress_cb(self)
+            time.sleep(min(0.5, left))
+        self.note = f"Reconnecting ({attempt} of {max_retries})…"
+        if progress_cb and not self.is_cancelled:
+            progress_cb(self)
+        return not self.is_cancelled
+
     def _transfer(self, progress_cb, completion_cb):
         dest_dir = os.path.dirname(self.dest_path)
         os.makedirs(dest_dir, exist_ok=True)
 
-        max_retries = 3
-        retry_count = 0
+        max_retries = len(RETRY_DELAYS_SECONDS)
+        retry_count = 0             # consecutive attempts that got nowhere
         mode = "wb"
 
         if os.path.exists(self.part_path) and os.path.getsize(self.part_path) > 0:
@@ -314,8 +347,10 @@ class DownloadTask:
             self.downloaded_bytes = 0
 
         while retry_count <= max_retries and not self.is_cancelled:
+            attempt_start = self.downloaded_bytes
             try:
                 log.info(f"Download attempt {retry_count + 1}/{max_retries + 1}: {self.url} (offset {self.downloaded_bytes})")
+                self.note = ""
 
                 headers = _headers_for(self.url)
                 ua = headers["User-Agent"]
@@ -441,10 +476,15 @@ class DownloadTask:
                     completion_cb(False, describe_failure(e, self.url))
                 return
             except (requests.exceptions.RequestException, DownloadError, IOError) as e:
+                if self.downloaded_bytes > attempt_start:
+                    # The link dropped, but this attempt moved the file on.
+                    # Resuming is not a retry; only getting nowhere is.
+                    retry_count = 0
                 retry_count += 1
-                log.warning(f"Download transient error (attempt {retry_count}): {e}")
+                log.warning(f"Download interrupted (attempt {retry_count} of "
+                            f"{max_retries + 1} without progress): {e}")
                 if retry_count > max_retries or self.is_cancelled:
-                    log.exception(f"Download failed permanently for {self.url}: {e}")
+                    log.error(f"Download failed for {self.url} after {max_retries} retries: {e}")
                     if self.is_cancelled and os.path.exists(self.part_path):
                         try:
                             os.remove(self.part_path)
@@ -453,9 +493,18 @@ class DownloadTask:
                     if completion_cb:
                         completion_cb(False, describe_failure(e, self.url))
                     return
-                # Wait briefly and resume with "ab"
+                # Resume with "ab" after a pause the row can see counting down.
                 mode = "ab"
-                time.sleep(1.5)
+                if not self._wait_before_retry(RETRY_DELAYS_SECONDS[retry_count - 1],
+                                               retry_count, max_retries, progress_cb):
+                    if os.path.exists(self.part_path):
+                        try:
+                            os.remove(self.part_path)
+                        except Exception:
+                            pass
+                    if completion_cb:
+                        completion_cb(False, "Cancelled by user")
+                    return
             except Exception as e:
                 log.exception(f"Fatal error during download: {e}")
                 if completion_cb:
