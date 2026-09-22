@@ -266,3 +266,64 @@ def test_tuxedo_takes_the_newest_image_not_the_first(monkeypatch):
             "TUXEDO-OS-202512181030.iso", "TUXEDO-OS-202609161651.iso", "TUXEDO-OS-current.iso"),
     })
     assert recipe.fetch_download_info("standard").version == "202609161651"
+
+
+# ------------------------------------------------------------------ Debian
+
+def _debian_pages(cd_status=200, get_status=200):
+    from src.recipes.debian import TREES, NETINST_DIR, LIVE_DIR
+    cd, get = TREES
+    listing = _listing("debian-13.6.0-amd64-netinst.iso", "debian-13.7.0-amd64-netinst.iso",
+                       "debian-13.7.0-amd64-netinst.iso.torrent", "SHA256SUMS")
+    live = _listing("debian-live-13.7.0-amd64-kde.iso", "debian-live-13.7.0-amd64-kde-lite.iso",
+                    "debian-live-13.7.0-amd64-gnome.iso")
+    sums = ("abc123  debian-13.6.0-amd64-netinst.iso\n"
+            "def456  debian-13.7.0-amd64-netinst.iso\n")
+    return {
+        cd + NETINST_DIR: _Resp(listing, cd_status, url=cd + NETINST_DIR),
+        cd + NETINST_DIR + "SHA256SUMS": _Resp(sums, cd_status),
+        cd + LIVE_DIR: _Resp(live, cd_status),
+        get + NETINST_DIR: _Resp(listing, get_status, url=get + NETINST_DIR),
+        get + NETINST_DIR + "SHA256SUMS": _Resp(sums, get_status),
+        get + LIVE_DIR: _Resp(live, get_status),
+    }
+
+
+def test_debian_takes_the_newest_image_and_its_checksum(monkeypatch):
+    from src.recipes.debian import DebianRecipe, TREES, NETINST_DIR
+    recipe, session = _with(monkeypatch, DebianRecipe(), _debian_pages())
+    info = recipe.fetch_download_info("netinst")
+    assert info.version == "13.7.0"
+    assert info.filename == "debian-13.7.0-amd64-netinst.iso"
+    assert info.url == TREES[0] + NETINST_DIR + info.filename
+    assert info.sha256 == "def456"
+
+
+def test_debian_live_matches_the_whole_name(monkeypatch):
+    """"kde" must not serve kde-lite, nor "standard" anything else."""
+    from src.recipes.debian import DebianRecipe
+    recipe, _ = _with(monkeypatch, DebianRecipe(), _debian_pages())
+    assert recipe.fetch_download_info("kde").filename == "debian-live-13.7.0-amd64-kde.iso"
+    with pytest.raises(ScrapeError):
+        recipe.fetch_download_info("standard")
+
+
+def test_debian_asks_get_debian_org_when_cdimage_answers_500(monkeypatch):
+    """Regression: cdimage.debian.org answers HTTP 500 now and then, and the
+    row read "No current release" for a release that was right there."""
+    from src.recipes.debian import DebianRecipe, TREES, NETINST_DIR
+    recipe, session = _with(monkeypatch, DebianRecipe(), _debian_pages(cd_status=500))
+    info = recipe.fetch_download_info("netinst")
+    assert info.version == "13.7.0"
+    assert info.url == TREES[1] + NETINST_DIR + "debian-13.7.0-amd64-netinst.iso"
+    assert info.sha256 == "def456"
+    assert session.asked[0] == TREES[0] + NETINST_DIR
+
+
+def test_debian_names_what_went_wrong_when_both_hosts_fail(monkeypatch):
+    from src.recipes.debian import DebianRecipe
+    recipe, _ = _with(monkeypatch, DebianRecipe(), _debian_pages(cd_status=500, get_status=503))
+    with pytest.raises(ScrapeError) as err:
+        recipe.fetch_download_info("netinst")
+    assert "HTTP 500" in str(err.value) and "HTTP 503" in str(err.value)
+    assert "no netinst image" not in str(err.value), "a server error is not an empty listing"

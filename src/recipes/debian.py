@@ -1,8 +1,35 @@
+"""Debian, from the release image tree.
+
+cdimage.debian.org answers HTTP 500 now and then, for a request or two at a
+time. Read as an empty listing, that was reported as "no current image", so
+the same tree is asked for again on get.debian.org - Debian's own download
+redirector, which serves it too - before giving up. Whatever goes wrong is
+named in the error, not dressed up as a missing image.
+
+The newest release in the listing is taken by version number; a directory
+that is mid-update can carry two.
+"""
 import re
-from typing import List
+from typing import List, Optional, Tuple
+
+import requests
 from bs4 import BeautifulSoup
+
 from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
 from src.core.logger import log
+
+# The same tree, at Debian's two official front doors.
+TREES = (
+    "https://cdimage.debian.org/debian-cd/",
+    "https://get.debian.org/images/release/",
+)
+NETINST_DIR = "current/amd64/iso-cd/"
+LIVE_DIR = "current-live/amd64/iso-hybrid/"
+
+
+def _numeric(version: str) -> Tuple[int, ...]:
+    return tuple(int(p) for p in version.split("."))
+
 
 class DebianRecipe(DistroRecipe):
     def __init__(self):
@@ -27,34 +54,52 @@ class DebianRecipe(DistroRecipe):
         ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        session = self.get_session()
         target = flavor_id.lower()
-
         if target == "netinst":
-            base_url = "https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/"
-            try:
-                r = session.get(base_url, timeout=10)
-                soup = BeautifulSoup(r.text, "html.parser")
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
-                    if href.endswith(".iso") and "netinst" in href:
-                        m = re.search(r'debian-([\d\.]+)-amd64', href)
-                        v = m.group(1) if m else "Current"
-                        return DownloadInfo(version=v, url=base_url + href, filename=href)
-            except Exception as e:
-                log.warning(f"[Debian] Error scraping netinst: {e}")
+            subdir = NETINST_DIR
+            pattern = re.compile(r"debian-(\d+(?:\.\d+)*)-amd64-netinst\.iso")
         else:
-            base_url = "https://cdimage.debian.org/debian-cd/current-live/amd64/iso-hybrid/"
-            try:
-                r = session.get(base_url, timeout=10)
-                soup = BeautifulSoup(r.text, "html.parser")
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
-                    if href.endswith(".iso") and (f"-{target}.iso" in href.lower() or f"-{target}-" in href.lower()):
-                        m = re.search(r'debian-live-([\d\.]+)-', href)
-                        v = m.group(1) if m else "Current"
-                        return DownloadInfo(version=v, url=base_url + href, filename=href)
-            except Exception as e:
-                log.warning(f"[Debian] Error scraping live: {e}")
+            subdir = LIVE_DIR
+            pattern = re.compile(rf"debian-live-(\d+(?:\.\d+)*)-amd64-{re.escape(target)}\.iso")
 
-        raise ScrapeError(self.name, f"no current amd64 {target} image listed on cdimage.debian.org")
+        session = self.get_session()
+        reasons = []
+        for tree in TREES:
+            base_url = tree + subdir
+            try:
+                resp = session.get(base_url, timeout=20)
+                resp.raise_for_status()
+            except Exception as e:
+                reasons.append(f"{base_url}: {e}")
+                log.warning(f"[Debian] Listing not served by {base_url}: {e}")
+                continue
+
+            newest: Optional[Tuple[Tuple[int, ...], str, str]] = None
+            for a in BeautifulSoup(resp.text, "html.parser").find_all("a", href=True):
+                m = pattern.fullmatch(a["href"])
+                if m and (newest is None or _numeric(m.group(1)) > newest[0]):
+                    newest = (_numeric(m.group(1)), m.group(1), a["href"])
+            if newest is None:
+                reasons.append(f"{base_url}: no {target} image in the listing")
+                continue
+
+            _, version, filename = newest
+            return DownloadInfo(version=version, url=base_url + filename, filename=filename,
+                                sha256=self._sha256(session, base_url, filename))
+
+        raise ScrapeError(self.name, "; ".join(reasons))
+
+    @staticmethod
+    def _sha256(session, base_url: str, filename: str) -> str:
+        """From the SHA256SUMS beside the image; "" when that cannot be had."""
+        try:
+            resp = session.get(base_url + "SHA256SUMS", timeout=20)
+            resp.raise_for_status()
+        except Exception as e:
+            log.warning(f"[Debian] No checksum for {filename}: {e}")
+            return ""
+        for line in resp.text.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[1].lstrip("*") == filename:
+                return parts[0].lower()
+        return ""
