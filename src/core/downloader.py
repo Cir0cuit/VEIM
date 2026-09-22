@@ -43,6 +43,42 @@ def _release(task) -> None:
         _reservations.pop(task, None)
 
 
+def _headers_for(url: str) -> dict:
+    ua = ("curl/8.4.0" if ("sourceforge" in url or "ibiblio" in url)
+          else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    return {"User-Agent": ua, "Accept": "*/*"}
+
+
+def probe_size(url: str, session: Optional[requests.Session] = None) -> int:
+    """How many bytes a download is, or 0 when the server will not say.
+
+    Asked before a transfer starts, so that one which will not fit can be
+    refused - or the room made for it - before anything is written. A HEAD
+    first; a mirror that refuses those gets a GET that is closed unread.
+    """
+    session = session or requests.Session()
+    headers = _headers_for(url)
+    try:
+        resp = session.head(url, headers=headers, timeout=(20, 30), allow_redirects=True)
+        length = resp.headers.get("Content-Length") if resp.ok else None
+        resp.close()
+        if not length:
+            resp = session.get(url, headers=headers, stream=True, timeout=(20, 30),
+                               allow_redirects=True)
+            length = resp.headers.get("Content-Length") if resp.ok else None
+            resp.close()
+        return int(length) if length else 0
+    except (requests.exceptions.RequestException, ValueError) as e:
+        log.warning(f"Could not learn the size of {url}: {e}")
+        return 0
+
+
+def free_for_download(dest_dir: str) -> int:
+    """Free space on the drive, less what running transfers still need."""
+    total, used, free = shutil.disk_usage(dest_dir)
+    return free - reserved_bytes()
+
+
 class DownloadError(Exception):
     pass
 
@@ -281,11 +317,8 @@ class DownloadTask:
             try:
                 log.info(f"Download attempt {retry_count + 1}/{max_retries + 1}: {self.url} (offset {self.downloaded_bytes})")
 
-                ua = "curl/8.4.0" if ("sourceforge" in self.url or "ibiblio" in self.url) else "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                headers = {
-                    "User-Agent": ua,
-                    "Accept": "*/*"
-                }
+                headers = _headers_for(self.url)
+                ua = headers["User-Agent"]
                 if self.downloaded_bytes > 0:
                     headers["Range"] = f"bytes={self.downloaded_bytes}-"
 
@@ -401,8 +434,8 @@ class DownloadTask:
                     completion_cb(True, "Success")
                 return
 
-            except (ChecksumError, ArchiveError) as e:
-                # Retrying fixes neither of these.
+            except (ChecksumError, ArchiveError, InsufficientSpaceError) as e:
+                # Retrying fixes none of these.
                 log.error(f"Download could not be finalised for {self.url}: {e}")
                 if completion_cb:
                     completion_cb(False, describe_failure(e, self.url))

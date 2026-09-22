@@ -1196,3 +1196,163 @@ def test_dropdown_survives_a_theme_change(themed, qapp):
         combo.hidePopup()
     finally:
         theme_manager.set_theme("Dark Modern")
+
+
+# ------------------------------------------------- room for an update
+
+def _new_task(tmp_path, name="archlinux-2026.10.01-x86_64.iso"):
+    task = DownloadTask("https://example.invalid/new.iso", str(tmp_path / "Managed_ISOs" / name))
+    task.start_async = lambda **kw: None
+    return task
+
+
+def test_space_plan_fits_when_the_old_iso_is_gone(installed, tmp_path, monkeypatch):
+    """The new release does not fit beside the old one, but would in its place."""
+    import src.ui.dashboard as dash
+    lib = installed.library
+    old = tmp_path / "Managed_ISOs" / "archlinux-2026.09.01-x86_64.iso"
+    old.write_bytes(b"x" * 1000)
+
+    monkeypatch.setattr(dash, "probe_size", lambda url, session=None: 1500)
+    monkeypatch.setattr(dash, "free_for_download", lambda d: 800)
+    plan = lib._space_plan("arch::standard", _new_task(tmp_path))
+    assert isinstance(plan, dash.SpacePlan)
+    assert (plan.needed, plan.free, plan.old_size) == (1500, 800, 1000)
+    assert plan.old_path == str(old)
+
+    monkeypatch.setattr(dash, "free_for_download", lambda d: 1600)
+    assert lib._space_plan("arch::standard", _new_task(tmp_path)) is None, "it fits as it is"
+
+    monkeypatch.setattr(dash, "free_for_download", lambda d: 400)
+    assert "Not enough space" in lib._space_plan("arch::standard", _new_task(tmp_path))
+
+    # A fresh install has no old ISO to give up.
+    monkeypatch.setattr(dash, "free_for_download", lambda d: 800)
+    assert "Not enough space" in lib._space_plan("mint::cinnamon", _new_task(tmp_path, "m.iso"))
+
+    # Unknown size: the transfer checks for itself once it knows.
+    monkeypatch.setattr(dash, "probe_size", lambda url, session=None: 0)
+    assert lib._space_plan("arch::standard", _new_task(tmp_path)) is None
+
+
+def test_space_plan_counts_a_partial_download_already_on_the_drive(installed, tmp_path, monkeypatch):
+    import src.ui.dashboard as dash
+    lib = installed.library
+    (tmp_path / "Managed_ISOs" / "archlinux-2026.10.01-x86_64.iso.part").write_bytes(b"p" * 700)
+    monkeypatch.setattr(dash, "probe_size", lambda url, session=None: 1500)
+    monkeypatch.setattr(dash, "free_for_download", lambda d: 800)
+    assert lib._space_plan("arch::standard", _new_task(tmp_path)) is None
+
+
+def test_declining_to_delete_the_old_iso_keeps_it_and_says_why(installed, qapp, tmp_path, monkeypatch):
+    import src.ui.dashboard as dash
+    lib = installed.library
+    card = _update(installed, qapp)
+    old = tmp_path / "Managed_ISOs" / "archlinux-2026.09.01-x86_64.iso"
+    monkeypatch.setattr(dash.DashboardView, "_ask_reclaim", lambda self, item, plan: False)
+
+    plan = dash.SpacePlan(needed=1500, free=800, old_path=str(old), old_size=1000)
+    lib._on_space_slot("arch::standard", lib._download_tokens["arch::standard"],
+                       _new_task(tmp_path), plan)
+    qapp.processEvents()
+
+    assert old.exists()
+    assert not card.is_downloading
+    assert "Not enough space" in card.meta.text()
+    assert "arch::standard" not in lib.active_tasks
+    assert "arch::standard" in lib.cards
+
+
+def test_deleting_the_old_iso_first_then_failing_leaves_no_row(installed, qapp, tmp_path, monkeypatch):
+    """What the dialog warns of: a failed download after the old ISO was
+    given up means neither is on the drive, and the row goes with them."""
+    import src.ui.dashboard as dash
+    lib = installed.library
+    card = _update(installed, qapp)
+    old = tmp_path / "Managed_ISOs" / "archlinux-2026.09.01-x86_64.iso"
+    monkeypatch.setattr(dash.DashboardView, "_ask_reclaim", lambda self, item, plan: True)
+    warned = []
+    monkeypatch.setattr(dash.QMessageBox, "warning",
+                        staticmethod(lambda *a, **kw: warned.append(a)))
+
+    task = _new_task(tmp_path)
+    plan = dash.SpacePlan(needed=1500, free=800, old_path=str(old), old_size=1000)
+    lib._on_space_slot("arch::standard", lib._download_tokens["arch::standard"], task, plan)
+    qapp.processEvents()
+
+    assert not old.exists(), "the old ISO was not deleted to make room"
+    assert card.is_downloading
+    assert lib.active_tasks["arch::standard"] is task
+    assert "arch::standard" in lib._reclaimed
+
+    lib._on_complete_slot("arch::standard", False, "mirror closed the connection")
+    qapp.processEvents()
+
+    assert "arch::standard" not in lib.cards, "a row with no ISO behind it"
+    assert "arch::standard" not in lib.inventory_mgr.items
+    assert lib._reclaimed == set()
+    assert len(warned) == 1 and "no longer on the drive" in warned[0][2]
+    assert "debian::netinst" in lib.cards, "the other row is not involved"
+
+
+def test_deleting_the_old_iso_first_then_succeeding_is_an_ordinary_update(
+        installed, qapp, tmp_path, monkeypatch):
+    import src.ui.dashboard as dash
+    lib = installed.library
+    card = _update(installed, qapp)
+    old = tmp_path / "Managed_ISOs" / "archlinux-2026.09.01-x86_64.iso"
+    monkeypatch.setattr(dash.DashboardView, "_ask_reclaim", lambda self, item, plan: True)
+
+    task = _new_task(tmp_path)
+    task._distro_meta = dict(key="arch", flavor_id="standard", display_name="Arch Linux",
+                             version="2026.10.01", filename=os.path.basename(task.dest_path),
+                             sha256="", url=task.url)
+    plan = dash.SpacePlan(needed=1500, free=800, old_path=str(old), old_size=1000)
+    lib._on_space_slot("arch::standard", lib._download_tokens["arch::standard"], task, plan)
+    (tmp_path / "Managed_ISOs" / task._distro_meta["filename"]).write_bytes(b"new")
+    lib._on_complete_slot("arch::standard", True, "Success")
+    qapp.processEvents()
+
+    assert lib.cards["arch::standard"] is card
+    assert card.item.version == "2026.10.01"
+    assert card.status.text() == "Updated"
+    assert lib._reclaimed == set()
+
+
+def test_cancelling_after_the_old_iso_was_deleted_drops_the_row(installed, qapp, tmp_path, monkeypatch):
+    import src.ui.dashboard as dash
+    lib = installed.library
+    card = _update(installed, qapp)
+    old = tmp_path / "Managed_ISOs" / "archlinux-2026.09.01-x86_64.iso"
+    monkeypatch.setattr(dash.DashboardView, "_ask_reclaim", lambda self, item, plan: True)
+    warned = []
+    monkeypatch.setattr(dash.QMessageBox, "warning",
+                        staticmethod(lambda *a, **kw: warned.append(a)))
+
+    plan = dash.SpacePlan(needed=1500, free=800, old_path=str(old), old_size=1000)
+    lib._on_space_slot("arch::standard", lib._download_tokens["arch::standard"],
+                       _new_task(tmp_path), plan)
+    card.btn_cancel.click()
+    qapp.processEvents()
+
+    assert "arch::standard" not in lib.cards
+    assert warned == [], "cancelling was the user's own choice"
+
+
+def test_a_transfer_cancelled_while_its_size_was_looked_up_never_asks(installed, qapp, tmp_path, monkeypatch):
+    import src.ui.dashboard as dash
+    lib = installed.library
+    card = _update(installed, qapp)
+    token = lib._download_tokens["arch::standard"]
+    card.btn_cancel.click()
+    qapp.processEvents()
+
+    asked = []
+    monkeypatch.setattr(dash.DashboardView, "_ask_reclaim",
+                        lambda self, item, plan: asked.append(1) or True)
+    old = tmp_path / "Managed_ISOs" / "archlinux-2026.09.01-x86_64.iso"
+    plan = dash.SpacePlan(needed=1500, free=800, old_path=str(old), old_size=1000)
+    lib._on_space_slot("arch::standard", token, _new_task(tmp_path), plan)
+
+    assert asked == []
+    assert old.exists()

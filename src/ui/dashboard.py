@@ -7,6 +7,7 @@ drive path ran underneath the buttons and got clipped - is gone.
 """
 import os
 import threading
+from dataclasses import dataclass
 from typing import Callable, Dict, Optional, List
 
 from PySide6.QtWidgets import (
@@ -18,7 +19,7 @@ from src.core.inventory import InventoryManager, InventoryItem, AdoptionCandidat
 from src.core.drive import DriveDetector
 from src.recipes.registry import registry
 from src.core.recipe_base import DistroRecipe, ScrapeError
-from src.core.downloader import DownloadTask
+from src.core.downloader import DownloadTask, free_for_download, probe_size
 from src.core.logger import log
 from src.ui.theme import theme_manager, ThemeColors
 from src.ui.components import make_button, EmptyState
@@ -37,6 +38,22 @@ class DashboardWorkerBridge(QObject):
     complete_signal = Signal(str, bool, str)      # composite_key, success, msg
     check_signal = Signal(str, str, str)          # composite_key, version, url
     error_signal = Signal(str, str)               # composite_key, error_msg
+    # composite_key, token, DownloadTask, SpacePlan: the new release fits only
+    # once the old one is gone, and that is the user's call.
+    space_signal = Signal(str, object, object, object)
+
+
+@dataclass(frozen=True)
+class SpacePlan:
+    """An update that fits on the drive only once the ISO it replaces is gone."""
+    needed: int         # bytes the new release still has to write
+    free: int           # free bytes, less what other transfers will take
+    old_path: str       # the ISO on the drive now
+    old_size: int
+
+
+def _gb(n: int) -> str:
+    return f"{n / (1024 ** 3):.2f} GB"
 
 
 ADOPT_TEXT = "Adopt ISOs"
@@ -80,6 +97,9 @@ class DashboardView(QWidget):
         self._download_tokens: Dict[str, object] = {}
         # Rows a "Check All Updates" is still waiting on.
         self._pending_checks: set = set()
+        # Updates whose old ISO was deleted up front to make room. If one of
+        # these fails, there is no ISO left to show a row for.
+        self._reclaimed: set = set()
 
         self.bridge = DashboardWorkerBridge(self)
         self.bridge.ready_signal.connect(self._on_ready_slot)
@@ -87,6 +107,7 @@ class DashboardView(QWidget):
         self.bridge.complete_signal.connect(self._on_complete_slot)
         self.bridge.check_signal.connect(self._on_check_slot)
         self.bridge.error_signal.connect(self._on_error_slot)
+        self.bridge.space_signal.connect(self._on_space_slot)
 
         self._build_ui()
         self.refresh_installed_list()
@@ -451,6 +472,30 @@ class DashboardView(QWidget):
             daemon=True,
         ).start()
 
+    def _space_plan(self, ck: str, task: DownloadTask):
+        """Worker thread: whether the transfer fits, before it starts.
+
+        None when it does, or when the size cannot be learned - the transfer
+        then checks itself once it knows. A SpacePlan when it fits only with
+        the ISO it replaces deleted first. A message when it fits either way not.
+        """
+        size = probe_size(task.url, session=task.session)
+        if size <= 0:
+            return None
+        already = os.path.getsize(task.part_path) if os.path.exists(task.part_path) else 0
+        needed = size - already
+        free = free_for_download(os.path.dirname(task.dest_path))
+        if needed <= free:
+            return None
+
+        item = self.inventory_mgr.items.get(ck)
+        old_path = os.path.join(self.inventory_mgr.managed_dir, item.filename) if item else ""
+        old_size = os.path.getsize(old_path) if old_path and os.path.exists(old_path) else 0
+        if old_size and needed <= free + old_size:
+            return SpacePlan(needed=needed, free=free, old_path=old_path, old_size=old_size)
+        return (f"Not enough space on drive! Required: {_gb(needed)}, "
+                f"Available: {_gb(max(free, 0))}")
+
     def _report_setup_error(self, ck: str, token: object, message: str):
         """Worker thread: a transfer cancelled meanwhile has nowhere to say it."""
         if self._download_tokens.get(ck) is token:
@@ -485,9 +530,16 @@ class DashboardView(QWidget):
                 "url": info.url,
                 "sha256": info.sha256,
             }
+            plan = self._space_plan(ck, task)
+            if isinstance(plan, str):
+                self._report_setup_error(ck, token, plan)
+                return
             # Started on the UI thread, which is the only one that knows whether
             # this transfer was cancelled while the recipe was still resolving.
-            self.bridge.ready_signal.emit(ck, token, task)
+            if plan is None:
+                self.bridge.ready_signal.emit(ck, token, task)
+            else:
+                self.bridge.space_signal.emit(ck, token, task, plan)
 
         except ScrapeError as e:
             # The recipe refused to guess. Surface why, so the user knows this is
@@ -538,6 +590,65 @@ class DashboardView(QWidget):
             completion_callback=_completed,
         )
 
+    def _on_space_slot(self, ck: str, token: object, task: DownloadTask, plan: SpacePlan):
+        if self._download_tokens.get(ck) is not token:
+            return          # cancelled while the size was being looked up
+        item = self.inventory_mgr.items.get(ck)
+        if item is None or not os.path.exists(plan.old_path):
+            # The old ISO went away meanwhile; the room is there after all.
+            self._on_ready_slot(ck, token, task)
+            return
+        if not self._ask_reclaim(item, plan):
+            self._on_error_slot(
+                ck, f"Not enough space for the new release beside the current one: "
+                    f"{_gb(plan.needed)} needed, {_gb(max(plan.free, 0))} free.")
+            return
+        try:
+            os.remove(plan.old_path)
+        except OSError as e:
+            self._on_error_slot(ck, f"Could not delete {item.filename}: {e}")
+            return
+        log.info(f"Deleted {item.filename} to make room for its update")
+        self._reclaimed.add(ck)
+        self._on_ready_slot(ck, token, task)
+
+    def _ask_reclaim(self, item: InventoryItem, plan: SpacePlan) -> bool:
+        """Delete the old ISO first, so the new one fits? Its terms are plain:
+        a failed download then leaves neither on the drive."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Low space on drive")
+        box.setText(f"Not enough space to download the new {item.display_name} "
+                    f"beside the current one.")
+        box.setInformativeText(
+            f"The update needs {_gb(plan.needed)} and the drive has {_gb(max(plan.free, 0))} "
+            f"free. Deleting {item.filename} ({_gb(plan.old_size)}) first would make room.\n\n"
+            "If the download then fails or is cancelled, neither the old ISO nor the "
+            "new one will be on the drive. A failed download keeps its partial file "
+            "and resumes when started again; a cancelled one is discarded.")
+        delete = box.addButton("Delete Old ISO and Download", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        box.exec()
+        return box.clickedButton() is delete
+
+    def _forget_reclaimed(self, ck: str, failure: str = "") -> bool:
+        """After a transfer whose old ISO was deleted up front ended without a
+        new one: the row has no file behind it any more."""
+        if ck not in self._reclaimed:
+            return False
+        self._reclaimed.discard(ck)
+        item = self.inventory_mgr.items.get(ck)
+        self.inventory_mgr.remove_entry(ck, delete_file=False)
+        if failure and item is not None:
+            QMessageBox.warning(
+                self, "Download failed",
+                f"The new {item.display_name} could not be downloaded: {failure}\n\n"
+                f"The previous ISO had been deleted to make room, so {item.display_name} "
+                "is no longer on the drive. Download it again from the catalog; the "
+                "partial file is kept and the transfer resumes from where it stopped.")
+        return True
+
     def _on_progress_slot(self, ck: str, task: DownloadTask):
         if task.is_cancelled:
             return
@@ -572,6 +683,8 @@ class DashboardView(QWidget):
         target = self.download_targets.pop(ck, None)
         if target:
             self.download_ended.emit(target[0], target[1], False, err_msg)
+        if self._forget_reclaimed(ck, err_msg):
+            self.refresh_installed_list()
 
     def _on_check_slot(self, ck: str, version: str, url: str):
         card = self.cards.get(ck)
@@ -605,6 +718,7 @@ class DashboardView(QWidget):
                     ck=ck if ck in self.inventory_mgr.items else "",
                 )
             self._remove_download_card(ck)
+            self._reclaimed.discard(ck)
             if row:
                 row.end_download(True, version=getattr(task, "_distro_meta", {}).get("version", ""))
 
@@ -624,6 +738,8 @@ class DashboardView(QWidget):
             target = self.download_targets.pop(ck, None)
             if target:
                 self.download_ended.emit(target[0], target[1], False, msg)
+            if self._forget_reclaimed(ck, msg):
+                self.refresh_installed_list()
 
     def cancel_by_flavor(self, key: str, flavor_id: str):
         """Cancel a transfer addressed the way the catalog knows it."""
@@ -647,6 +763,8 @@ class DashboardView(QWidget):
         row = self._updating_row(ck)
         if row:
             row.end_download(False)
+        # Cancelled on purpose, after being told what that would leave.
+        self._forget_reclaimed(ck)
         self.refresh_installed_list()
 
     def _dismiss_download(self, ck: str):
