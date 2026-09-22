@@ -1037,6 +1037,22 @@ def test_check_all_shows_that_it_is_checking(held_checks, installed, qapp):
     assert "1 update available" in lib.subtitle.text()
 
 
+def test_subtitle_stops_counting_an_update_once_it_is_underway(installed, qapp):
+    """The header summarises what is waiting; a transfer on its way is not."""
+    lib = installed.library
+    lib._on_check_slot("arch::standard", "2026.10.01", "https://example.invalid/a.iso")
+    lib._on_check_slot("debian::netinst", "13.1.0", "")
+    assert "1 update available" in lib.subtitle.text()
+
+    lib._on_catalog_install_request(registry.get_recipe("arch"), "standard")
+    qapp.processEvents()
+    assert lib.cards["arch::standard"].is_downloading
+    assert "update" not in lib.subtitle.text()
+
+    lib._on_error_slot("arch::standard", "mirror closed the connection")
+    assert "1 update available" in lib.subtitle.text()
+
+
 def test_checking_all_again_visibly_checks_again(held_checks, installed, qapp):
     """Regression: a second press left every row reading "Up to date"
     throughout, so there was no sign that anything had been asked."""

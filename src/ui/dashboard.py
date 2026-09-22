@@ -331,8 +331,9 @@ class DashboardView(QWidget):
 
         # What the checks found, so the answer to "Check All Updates" can be
         # read in one place instead of by scrolling the list.
+        # An update already on its way is being taken, not waiting to be.
         updates = sum(1 for c in self.cards.values()
-                      if c.update_available and not c.is_checking)
+                      if c.update_available and not c.is_checking and not c.is_downloading)
         if any(c.is_checking for c in self.cards.values()):
             pass        # an answer being re-asked is not one to summarise yet
         elif updates:
@@ -429,6 +430,7 @@ class DashboardView(QWidget):
         if row is not None:
             # Replacing an ISO that has a row: the row is the progress display.
             row.begin_download()
+            self._refresh_subtitle()
         else:
             card = DownloadingCard(
                 key=recipe.key,
@@ -565,6 +567,7 @@ class DashboardView(QWidget):
         row = self._updating_row(ck)
         if row:
             row.end_download(False, err_msg)
+            self._refresh_subtitle()
 
         target = self.download_targets.pop(ck, None)
         if target:
