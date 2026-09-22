@@ -76,10 +76,15 @@ and closing the dialog simply means not now. The drive picker also has a
 
 1. Plug in the Ventoy drive and open VEIM. It lists the removable drives it
    can see and marks the Ventoy ones. Pick yours, or **Browse Folder…** to it.
-2. **Browse Catalog** — find something, choose an edition, press **Download**.
+   A freshly made drive and one you have been using for years both work.
+2. **Installed** shows what is on the drive. If there are ISOs you copied there
+   yourself, an **Adopt ISOs** button offers to take over the ones VEIM
+   recognises, so they can be checked and updated like the rest. The others
+   are left exactly as they are.
+3. **Browse Catalog** — find something, choose an edition, press **Download**.
    The ISO lands on the drive, ready to boot. Queue as many as you like.
-3. **Installed** — everything on the drive. Press **Check All Updates**
-   whenever you want to know what has moved on.
+4. Come back any time and press **Check All Updates**. Anything with a newer
+   release gets an **Update** button; one click replaces it.
 
 That's the whole workflow. The rest of this page is detail.
 
