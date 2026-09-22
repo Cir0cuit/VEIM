@@ -6,8 +6,7 @@
 
 **Ventoy Easy ISO Manager**
 
-Keep the operating systems and tools on your [Ventoy](https://www.ventoy.net/)
-USB drive up to date, without hunting down a download page for every one.
+The ISOs on your [Ventoy](https://www.ventoy.net/) USB drive, kept current.
 
 [![CI](https://github.com/Cir0cuit/VEIM/actions/workflows/ci.yml/badge.svg)](https://github.com/Cir0cuit/VEIM/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
@@ -16,116 +15,137 @@ USB drive up to date, without hunting down a download page for every one.
 
 [**Download**](https://github.com/Cir0cuit/VEIM/releases/latest) · 64 distributions and tools · 216 editions
 
-![The installed library](docs/images/library.png)
+![The library](docs/images/library.png)
 
-<em>Fedora has a newer release, Linux Mint is being replaced on its own row, a
-fresh Ubuntu is on its way, two are current, and Tails' download page could not
-be read. Two ISOs copied on by hand are waiting to be adopted; a third, which
-VEIM does not recognise, is left alone.</em>
+<em>Fedora has a newer release. Linux Mint is being replaced on its own row.
+A fresh Ubuntu is on its way. Two ISOs copied onto the drive by hand are
+waiting to be adopted; a third, which VEIM does not recognise, is left alone.</em>
 
 </div>
 
 ---
 
-## What it is
+## Why
 
-Ventoy makes a single USB drive boot anything you copy onto it. Put a dozen ISO
-files on the stick and choose one from a menu at boot: try a live desktop, run
-an installer, boot a rescue system, test your RAM. No reflashing between them.
+Ventoy turns one USB drive into a boot menu: copy ISO files onto it and pick
+one at boot. The drive fills up with installers, live desktops and rescue tools,
+and then it sits in a drawer. A year on, every file on it is a year old, and
+the only way to find out which ones have been superseded is to open each
+project's download page and compare version numbers by hand.
 
-The hard part is keeping that collection current. Six months later the files on
-the drive look exactly as they did the day you copied them, and the only way to
-find out which ones have been superseded is to open a dozen download pages and
-compare version numbers by hand. Most sticks quietly go stale instead.
-
-VEIM does that checking for you. Point it at the drive and it lists what is on
-there, marks what has a newer release available, downloads the replacement, and
-gives the boot menu readable names instead of
+VEIM does that. Point it at the drive and it lists what is on there, asks each
+project what its current release is, marks what has moved on, and downloads the
+replacement in place. It also gives the boot menu readable names instead of
 `linuxmint-22.3-cinnamon-64bit.iso`.
 
-> **VEIM is not Ventoy, and does not replace it.** Ventoy is a separate tool
-> that you install onto the drive once, [from its own site](https://www.ventoy.net/).
-> VEIM manages the ISO files on a drive that already has it. It never formats,
-> partitions or reflashes anything.
+> **VEIM is not Ventoy.** Ventoy is a separate tool that you install onto the
+> drive once, [from its own site](https://www.ventoy.net/). VEIM manages the
+> ISO files on a drive that already has it. It never formats, partitions or
+> reflashes anything.
 
-## Download
+## Install
 
-Grab the file for your system from the
-[latest release](https://github.com/Cir0cuit/VEIM/releases/latest) and open it.
-Nothing else to install.
+Get the file for your system from the
+[latest release](https://github.com/Cir0cuit/VEIM/releases/latest). There is
+nothing else to install.
 
 | | |
 |---|---|
-| **Windows** | `VEIM-x.y.z-windows-setup.exe` — double-click, next, done. Installs for your user only, so there is no administrator prompt. A portable `.zip` is there too if you would rather not install anything. |
-| **macOS** | `VEIM-x.y.z-macos-arm64.dmg` (Apple Silicon) or `-x86_64.dmg` (Intel). Open it and drag VEIM to Applications. |
-| **Linux** | `VEIM-x.y.z-x86_64.AppImage` — `chmod +x` it once and double-click. No packages, no dependencies. |
+| **Windows** | `VEIM-x.y.z-windows-setup.exe` installs for your user only, so there is no administrator prompt. `VEIM-x.y.z-windows-portable.zip` runs from wherever you unpack it. |
+| **macOS** | `VEIM-x.y.z-macos-arm64.dmg` for Apple Silicon, `-x86_64.dmg` for Intel. Open it and drag VEIM to Applications. |
+| **Linux** | `VEIM-x.y.z-x86_64.AppImage`. `chmod +x` it once, then double-click. No packages, no dependencies. |
 
-The app checks for a new version of itself each time it starts and asks, in so
-many words, what you want to do about it: download it, skip that version, or
-hear nothing for a week. The version it is running sits next to the VEIM wordmark,
-and the drive picker has a **Check for VEIM Updates** button — separate from
-**Check All Updates**, which is about the ISOs on your drive.
+Every release also carries `SHA256SUMS.txt`.
 
 <details>
-<summary>The first launch warns that the app is unidentified</summary>
+<summary>The first launch says the app is unidentified</summary>
 
-Releases are not code-signed, because a certificate costs a few hundred dollars
-a year and this is a free tool.
+Releases are not code-signed: a certificate costs a few hundred dollars a year,
+and this is a free tool.
 
 - **Windows** — SmartScreen shows "Windows protected your PC". Click **More
   info**, then **Run anyway**.
 - **macOS** — right-click VEIM in Applications and choose **Open** the first
   time, then confirm. Double-clicking is enough after that.
 
-Every release also ships a `SHA256SUMS.txt` if you want to check what you
-downloaded.
-
 </details>
 
-## First run
+VEIM checks for a new release of itself on every start and, if there is one,
+asks once: **Download**, **Skip This Version**, or **Remind Me in a Week**.
+Closing the dialog means "not now", and it asks again next time. The version
+you are running is shown next to the wordmark, and the drive picker has a
+**Check for VEIM Updates** button for asking on demand.
 
-1. Plug in the drive and start the app. It lists the removable drives it can
-   see and marks the ones that look like Ventoy — pick yours, or browse to a
-   folder.
-2. **Installed** is what is already on the drive. ISOs you copied there
-   yourself are offered for adoption if VEIM can tell what they are — see
-   [below](#isos-you-put-there-yourself).
-3. **Browse Catalog** is the list of 64 entries. Choose an edition from the
-   selector on a row and press **Download**. It streams straight to the drive
-   and reports progress on that row, so you can queue up another while it runs.
-4. Come back later and press **Check All Updates**.
+## Using it
 
-## Keeping the drive current
+### Choose a drive
 
-**Check All Updates** looks up the current release of everything on the drive,
-all at once. Each row shows **Checking…** while its answer is pending — so does
-the button, and pressing it again while a check runs does nothing — and then
-settles on one of these:
+The first screen lists the removable drives it can see and marks the ones that
+look like Ventoy: a `ventoy/` folder, a `Managed_ISOs/` folder, or "ventoy" in
+the volume label. Pick yours, or **Browse Folder…** to any directory. A tiny
+partition is flagged — that is Ventoy's EFI partition, not the one your ISOs
+go on — and so is a read-only mount.
+
+Only what is really mounted is offered: drive letters on Windows, `/Volumes`
+on macOS, and mounts under `/media`, `/run/media` and `/mnt` on Linux. An empty
+directory left behind by an unplugged drive is not, because the free space it
+reports belongs to your system disk. Plug the drive in and press **Refresh**.
+
+### The library
+
+**Installed** is everything VEIM manages on the drive. Press **Check All
+Updates** and every row asks its project for the current release, at once.
+While an answer is pending the row reads **Checking…**, and so does the button.
+Then each row settles on one of these:
 
 | | |
 |---|---|
-| **Up to date** | The installed version matches what the project publishes now. |
-| **Update to 44** | A newer release exists, and the row names it. The row grows an **Update** button that downloads the new version and replaces the old file; while it does, the row itself shows the progress and a **Cancel** button, and the old ISO stays bootable until the new one has arrived and been verified. |
-| **Newer than 43** | The drive holds a *later* release than the catalog can find — a pre-release you fetched yourself, or a recipe that has fallen behind upstream. Nothing is offered: that would be a downgrade. |
-| **No current release** | The current version could not be worked out — a mirror is down, or a download page has changed. Deliberately *not* reported as up to date. |
+| **Up to date** | The installed version is what the project publishes now. |
+| **Update to 44** | A newer release exists, and the row names it. The row grows an **Update** button. |
+| **Newer than 43** | The drive holds a *later* release than the catalog can find: a pre-release you fetched yourself, or a recipe that has fallen behind upstream. Nothing is offered, because it would be a downgrade. |
+| **No current release** | The project's download page could not be read — a mirror is down, or the page has changed. The ISO is still fine to boot; VEIM just cannot say whether a newer one exists, and says that instead of guessing. |
 
-The header sums it up: *2 updates available*, or *all up to date*. Individual
-rows can be checked on their own with **Check**. An update is just a download:
-resumable, verified where a checksum exists, reported on the row.
+The header sums it up — *2 updates available*, or *all up to date* — and a
+single row can be asked on its own with **Check**.
 
-Every download URL is read from the project's own release page at the moment
-you press Download. None is stored — a saved URL keeps working long after it
-has stopped pointing at the current release, which is how you end up booting a
-two-year-old ISO that looked fine in the list. For the same reason a recipe
-never pins a release folder and never trusts a "latest" label: it reads the
-release listing and takes the newest.
+### Updating
 
-## ISOs you put there yourself
+**Update** downloads the new release and replaces the old file. The transfer
+shows on the row itself: percentage, speed, bytes, time left, and a **Cancel**
+button. The old ISO stays on the drive and bootable until the new one has
+fully arrived and been verified; only then is it swapped in and the old file
+deleted. Several updates can run at the same time.
 
-An ISO you copied onto the drive is *not* taken over on sight. It is offered for
-adoption only if it is named exactly like an official download — the same name
-the project's own mirror would have given it — because that is the only case in
-which VEIM knows its version and can genuinely keep it current.
+Every download works the same way, whether it is an update or a fresh install:
+
+- It streams to a `.part` file next to the destination. If the connection
+  drops it retries, and if VEIM is closed it picks up where it stopped the
+  next time you press the button, using an HTTP range request. Cancelling on
+  purpose is the one case that discards the partial file.
+- Free space is checked before a byte is written.
+- Where the project publishes a SHA-256, the finished file is hashed before it
+  is renamed from `.part` to `.iso`. A mismatch deletes it, and the row says so.
+- Memtest86+ ships its image inside a `.zip`; VEIM unpacks the ISO and drops
+  the archive, so what lands on the drive is what Ventoy can boot.
+
+### The catalog
+
+**Browse Catalog** is the full list, filtered by category or by typing. A
+project with several images has one row and a selector on it — Ubuntu's twelve
+flavors, Debian's nine, Proxmox's four products — rather than a row per image.
+Fedora has thirty-one, so it is four entries, split the way fedoraproject.org
+splits them: Editions, Atomic Desktops, Spins and Labs.
+
+**Download** starts the transfer and shows its progress on that row, so you
+can queue the next one without leaving the page. A row whose edition is already
+on the drive reads **Installed** and offers **Reinstall**.
+
+### ISOs you copied there yourself
+
+An ISO you put on the drive is not taken over on sight. It is offered for
+adoption only if it is named exactly as the project itself names that download,
+because that is the one case in which VEIM knows what it is and which version
+it is, and can genuinely keep it current.
 
 <div align="center">
 
@@ -133,52 +153,44 @@ which VEIM knows its version and can genuinely keep it current.
 
 </div>
 
-**Adopt ISOs** in the header lists those, and each one is yours to decide:
+When there are such files, the library shows **Adopt ISOs (2)**. Each one gets
+its own answer:
 
-- **Adopt** — it becomes a row in the list, checked and updated like any other.
-  An ISO sitting in the drive root is moved into `Managed_ISOs/` on the way in.
-- **Leave alone** — it stays as it is and is not asked about again. The button
-  becomes **Excluded ISOs** once nothing is waiting, so the choice can be
-  undone. One left in the drive root is offered a plain move into
-  `Managed_ISOs/`, where Ventoy looks, and is still not managed.
+- **Adopt** — it becomes a row, checked and updated like anything VEIM
+  downloaded. One sitting in the drive root is moved into `Managed_ISOs/`.
+- **Leave alone** — it is not asked about again. The button becomes
+  **Excluded ISOs** once nothing is waiting, so the answer can be changed.
 - Neither — asked again next time.
 
-A renamed, customised or unrecognised ISO is never listed, tracked or changed:
-a customised Clonezilla filed as the official release would be "updated" —
-overwritten — by the next check, so VEIM refuses to guess. The library says how
-many such files it is leaving alone. **Remove** on a row offers the same
-distinction: delete the file, or keep it and merely stop managing it.
+A renamed, remastered or otherwise unrecognised ISO is never listed, tracked or
+touched. It boots as usual, and the library says how many of those it is
+leaving alone. This is deliberate: a customised Clonezilla filed as the
+official one would be "updated" — overwritten — at the next check. VEIM does
+not guess.
 
-## What else it does
+### Removing
 
-| | |
-|---|---|
-| **Browse and install** | 64 entries, 216 editions, filtered by category or free-text search. Downloads start from the row you are looking at and report progress there, so you can queue several without leaving the catalog. |
-| **Resumable transfers** | Downloads stream to a `.part` file and pick up where they stopped, using HTTP range requests. Several can run at once, and free space is checked before any of them starts. |
-| **Checksum verification** | Where a project publishes a SHA-256, the finished file is hashed before it is renamed from `.part` to `.iso`, and a mismatch deletes it instead of writing it to your drive. |
-| **Readable boot menu** | Writes `ventoy/ventoy.json` aliases like `Fedora 44 KDE Plasma`, and points Ventoy at `Managed_ISOs/` so the menu shows the collection and nothing else. Aliases you added by hand are preserved, and if an ISO in the drive root drops out of the menu as a result, the library says so and offers to move it in. |
-| **Unpacks archive-only releases** | Memtest86+ ships its image only inside a `.zip`, and Ventoy boots `.iso` files. VEIM checks the archive, extracts the ISO and deletes the zip. |
-| **Eight themes** | Dark Modern, Amoled Black, Gruvbox Dark, Cyberpunk, Nord, Dracula, Solarized Light and Clean Light, plus System Match. |
+**Remove** asks which of two things you mean: **Delete File**, or **Keep File,
+Stop Managing**. A kept file stays where it is and keeps booting; VEIM will not
+check, update or offer it again. That is the way out for an ISO adopted by
+mistake, or one you have customised since.
 
-<div align="center">
+## What it never does
 
-![The catalog](docs/images/catalog.png)
-
-<em>Gruvbox Dark · Amoled Black · Solarized Light</em>
-
-<img src="docs/images/theme-gruvbox.png" width="32%"> <img src="docs/images/theme-amoled.png" width="32%"> <img src="docs/images/theme-solarized.png" width="32%">
-
-</div>
+- **Download from a remembered URL.** Every transfer starts by reading the
+  project's release page at that moment. A saved URL keeps working long after
+  it has stopped pointing at the current release, which is how a "latest" ISO
+  turns out to be two years old.
+- **Trust a label.** Names like `-latest`, `-current` and `-stable` are not
+  versions. A recipe reads the release listing and takes the newest by number.
+- **Fall back to an older release.** When a mirror cannot be reached, the row
+  says **No current release**. It does not quietly report the last release it
+  managed to find as current.
+- **Offer a downgrade.** See **Newer than 43** above.
+- **Touch a file it did not download or you did not adopt.** ISOs live in
+  `Managed_ISOs/`; the rest of the drive is Ventoy's and yours.
 
 ## Catalog
-
-Every entry is read from the project's own release page or mirror listing each
-time it is asked, so what VEIM offers is what the project publishes today.
-Editions of one project are picked from a selector on its row rather than
-filling the list with near-duplicates: Ubuntu has twelve flavors, Proxmox four
-products, SparkyLinux a stable and a rolling line. Fedora publishes some forty
-images, so it is four entries, split the way fedoraproject.org splits them:
-Editions, Atomic Desktops, Spins and Labs.
 
 <!-- catalog:start -->
 
@@ -292,55 +304,46 @@ Editions, Atomic Desktops, Spins and Labs.
 
 <!-- catalog:end -->
 
-A few things are deliberately absent. Kali's Live and Everything images are
+A few things are absent on purpose. Kali's Live and Everything images are
 torrent-only, so there is no download to keep current. Images published under
-a name that never changes — Bazzite's `-stable`, netboot.xyz, anything called
-`-latest` — cannot be recognised on a drive by name, so they are downloaded and
-updated through the catalog but never offered for adoption.
+a name that never changes — Bazzite's `-stable`, `netboot.xyz.iso`, anything
+called `-latest` — can be downloaded and updated through the catalog, but a
+copy found on a drive cannot be told apart from an older one, so they are never
+offered for adoption.
 
-Missing something? Adding an entry is a small, well-worn job — see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Adding an entry is a small, well-trodden job:
+[CONTRIBUTING.md](CONTRIBUTING.md) walks through it.
 
-## Questions
+## Where things live
 
-**Do I need Ventoy installed first?** Yes. Making the drive bootable is a
-one-time job for [Ventoy's own installer](https://www.ventoy.net/). VEIM never
-formats a drive — it creates `Managed_ISOs/` and `ventoy/` on one and writes
-only in there.
+On the drive:
 
-**The drive is not in the list.** VEIM offers what is really mounted: the drive
-letters on Windows, `/Volumes` on macOS, and whatever is mounted under `/media`,
-`/run/media` and `/mnt` on Linux. An empty directory left behind by an unmounted
-drive is not offered — the free space such a folder reports belongs to the
-system disk, not to anything you plugged in. Mount the drive and press
-**Refresh**, or point **Browse Folder…** straight at it.
+| | |
+|---|---|
+| `Managed_ISOs/` | The ISOs, and `veim_inventory.json` — what each one is, which version, and which files you asked to be left alone. Delete it and you lose only the list: the ISOs stay, and are offered for adoption again. |
+| `ventoy/ventoy.json` | Written by VEIM. Points Ventoy at `Managed_ISOs/` and gives each managed ISO a menu name such as `Linux Mint Cinnamon`. Aliases for files elsewhere on the drive are kept as you wrote them. Because the menu is limited to `Managed_ISOs/`, an ISO left in the drive root drops out of it — the library says so and offers to move it in, without managing it. |
 
-**Will it touch files I put on the drive myself?** Not without asking. ISOs
-live in `Managed_ISOs/`, the boot menu is `ventoy/ventoy.json`, and aliases you
-wrote by hand in that file are kept. An ISO is only ever adopted, moved,
-replaced or deleted because you chose that for it.
+On your computer, in `%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or
+`~/Library/Application Support/VEIM`: the log, the rendered logos, and the
+record of which VEIM release you skipped or snoozed. Deleting the folder costs
+nothing.
 
-**Can I use ISOs I already downloaded?** Yes. Copy them onto the drive and
-press **Adopt ISOs**. Anything named like an official download is offered;
-anything else boots as usual and is left alone.
+## Themes
 
-**What happens if a download is interrupted?** It leaves a `.part` file beside
-the destination and resumes with a range request the next time you start it.
-Cancelling on purpose is the one case that throws the partial file away.
+Dark Modern, Amoled Black, Gruvbox Dark, Cyberpunk, Nord, Dracula, Solarized
+Light and Clean Light, or **System** to follow the desktop.
 
-**A row says "No current release" — is something broken?** Upstream, probably.
-It means VEIM could not read that project's download page, usually because a
-mirror is down or the page has been redesigned. The ISO on your drive is still
-fine to boot; VEIM simply cannot tell you whether a newer one exists, so it says
-that instead of guessing.
+<div align="center">
 
-**Where does it keep its own files?** The logo cache and the update-check record
-go in `%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or
-`~/Library/Application Support/VEIM`. On the drive itself, the inventory is
-`Managed_ISOs/veim_inventory.json`. Deleting either costs you nothing but the
-list: the ISOs stay, and are offered for adoption again.
+![The catalog](docs/images/catalog.png)
 
-## Building it yourself
+<em>Gruvbox Dark · Amoled Black · Solarized Light</em>
+
+<img src="docs/images/theme-gruvbox.png" width="32%"> <img src="docs/images/theme-amoled.png" width="32%"> <img src="docs/images/theme-solarized.png" width="32%">
+
+</div>
+
+## From source
 
 ```bash
 git clone https://github.com/Cir0cuit/VEIM
@@ -349,15 +352,15 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Python 3.10 or newer. [CONTRIBUTING.md](CONTRIBUTING.md) covers the test suite,
-the layout, how to add a distribution or a theme, and how the installers are
-built.
+Python 3.10 or newer. [CONTRIBUTING.md](CONTRIBUTING.md) covers the test
+suite, the layout, how to add a distribution or a theme, and how the installers
+are built.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
 
-Distribution names and logos are trademarks of their respective projects, and
-are included here solely to identify them. The rendered logos live in
+Distribution names and logos are trademarks of their respective projects and
+are used only to identify them. The rendered logos are in
 [`src/assets/icons/`](src/assets/icons/); if you fork and redistribute VEIM,
-check each project's own trademark policy.
+check each project's trademark policy.
