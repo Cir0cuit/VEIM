@@ -227,3 +227,91 @@ def test_plain_iso_download_is_unaffected_by_the_archive_path(tmp_path):
     assert done.wait(30)
     assert outcome["ok"]
     assert dest.read_bytes() == payload
+
+
+# --------------------------------------------------------------- free space
+
+def _held_session(payload: bytes, gate):
+    """A server that sends the first chunk, then waits for `gate`."""
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Length": str(len(payload))}
+        def raise_for_status(self): pass
+        def close(self): pass
+        def iter_content(self, chunk_size=1):
+            yield payload[:10]
+            gate.wait(30)
+            yield payload[10:]
+
+    class FakeSession:
+        def get(self, *a, **kw): return FakeResponse()
+
+    return FakeSession()
+
+
+def _start(task):
+    import threading
+    done = threading.Event()
+    outcome = {}
+    task.start_async(completion_callback=lambda ok, msg: (outcome.update(ok=ok, msg=msg),
+                                                          done.set()))
+    return done, outcome
+
+
+def test_free_space_counts_the_downloads_already_running(tmp_path, monkeypatch):
+    """Regression: six transfers started at once onto a drive with room for two.
+    Each one checked the disk on its own and, on its own, fitted."""
+    import threading
+    import time
+    from src.core import downloader
+
+    payload = os.urandom(1024)
+    # Room for one and a half of these, never for two.
+    monkeypatch.setattr(downloader.shutil, "disk_usage",
+                        lambda path: (10 ** 9, 10 ** 9 - 1536, 1536))
+
+    gate = threading.Event()
+    first = DownloadTask("https://example.invalid/a.iso", str(tmp_path / "a.iso"),
+                         session=_held_session(payload, gate))
+    first_done, first_outcome = _start(first)
+    deadline = time.monotonic() + 5
+    while downloader.reserved_bytes() == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert downloader.reserved_bytes() == len(payload) - 10 or downloader.reserved_bytes() == len(payload)
+
+    second = DownloadTask("https://example.invalid/b.iso", str(tmp_path / "b.iso"),
+                          session=_held_session(payload, threading.Event()))
+    second_done, second_outcome = _start(second)
+    assert second_done.wait(10)
+    assert not second_outcome["ok"]
+    assert "spoken for by downloads already running" in second_outcome["msg"]
+    assert not (tmp_path / "b.iso").exists()
+
+    gate.set()
+    assert first_done.wait(10)
+    assert first_outcome["ok"]
+    assert downloader.reserved_bytes() == 0, "a finished transfer must give its space back"
+
+    # With the first one done, the same request fits.
+    third_gate = threading.Event()
+    third_gate.set()
+    third = DownloadTask("https://example.invalid/c.iso", str(tmp_path / "c.iso"),
+                         session=_held_session(payload, third_gate))
+    third_done, third_outcome = _start(third)
+    assert third_done.wait(10)
+    assert third_outcome["ok"], third_outcome
+
+
+def test_a_failed_transfer_gives_its_space_back(tmp_path, monkeypatch):
+    import threading
+    from src.core import downloader
+
+    class Boom:
+        def get(self, *a, **kw): raise OSError("no route to host")
+
+    monkeypatch.setattr(downloader.time, "sleep", lambda s: None)
+    task = DownloadTask("https://example.invalid/x.iso", str(tmp_path / "x.iso"), session=Boom())
+    done, outcome = _start(task)
+    assert done.wait(10)
+    assert not outcome["ok"]
+    assert downloader.reserved_bytes() == 0

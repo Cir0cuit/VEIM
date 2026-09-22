@@ -290,7 +290,9 @@ stops checking it. That's also the way out for an ISO adopted by mistake.
 - **Verified.** Where a project publishes a SHA-256, the finished file is
   checked before it becomes a `.iso`. A mismatch is deleted, and the row tells
   you.
-- **Space-checked.** Free space is confirmed before a single byte is written.
+- **Space-checked.** Free space is confirmed before a single byte is written,
+  counting what the downloads already running still have to write. Six
+  transfers started at once cannot overfill the drive between them.
 - **Always the current release.** VEIM never downloads from a URL it
   remembered. Every transfer starts by reading the project's own release page
   at that moment and taking the newest release by version number — never a

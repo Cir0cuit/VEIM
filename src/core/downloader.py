@@ -20,6 +20,29 @@ PROGRESS_INTERVAL_SECONDS = 0.5
 # Weight of a new ETA estimate against the running one.
 ETA_SMOOTHING = 0.2
 
+# Bytes each running transfer still has to write, by task. A free-space check
+# that looked only at the disk let six downloads start at once onto a drive
+# with room for two: each one, on its own, fitted.
+_reservations: dict = {}
+_reservations_lock = threading.Lock()
+
+
+def reserved_bytes(except_task=None) -> int:
+    """What the transfers in flight are still going to write."""
+    with _reservations_lock:
+        return sum(n for t, n in _reservations.items() if t is not except_task)
+
+
+def _reserve(task, remaining: int) -> None:
+    with _reservations_lock:
+        _reservations[task] = max(remaining, 0)
+
+
+def _release(task) -> None:
+    with _reservations_lock:
+        _reservations.pop(task, None)
+
+
 class DownloadError(Exception):
     pass
 
@@ -216,6 +239,31 @@ class DownloadTask:
         self._thread.start()
 
     def _run(self, progress_cb, completion_cb):
+        try:
+            self._transfer(progress_cb, completion_cb)
+        finally:
+            _release(self)
+
+    def _check_space(self, dest_dir: str) -> None:
+        """Raise unless this transfer fits beside the ones already running.
+
+        Their .part files have taken their bytes off the disk already; what
+        they have still to write has not, so it is counted here.
+        """
+        total, used, free = shutil.disk_usage(dest_dir)
+        remaining = ((self.total_bytes - self.downloaded_bytes)
+                     if self.total_bytes > 0 else 1024 ** 3)
+        others = reserved_bytes(except_task=self)
+        if free - others < remaining:
+            gb = lambda n: round(n / (1024 ** 3), 2)
+            detail = (f"{gb(free)} GB, of which {gb(others)} GB is spoken for by "
+                      f"downloads already running" if others else f"{gb(free)} GB")
+            raise InsufficientSpaceError(
+                f"Not enough space on drive! Required: {gb(remaining)} GB, "
+                f"Available: {detail}")
+        _reserve(self, remaining)
+
+    def _transfer(self, progress_cb, completion_cb):
         dest_dir = os.path.dirname(self.dest_path)
         os.makedirs(dest_dir, exist_ok=True)
 
@@ -274,12 +322,7 @@ class DownloadTask:
                 elif not self.total_bytes:
                     self.total_bytes = self.expected_size
 
-                total, used, free = shutil.disk_usage(dest_dir)
-                remaining_space = (self.total_bytes - self.downloaded_bytes) if self.total_bytes > 0 else (1024 * 1024 * 1024)
-                if free < remaining_space:
-                    req_gb = round(remaining_space / (1024**3), 2)
-                    free_gb = round(free / (1024**3), 2)
-                    raise InsufficientSpaceError(f"Not enough space on drive! Required: {req_gb} GB, Available: {free_gb} GB")
+                self._check_space(dest_dir)
 
                 chunk_size = 128 * 1024  # 128 KB chunks
                 # Samples from before a stall describe a connection that is gone.
@@ -307,6 +350,8 @@ class DownloadTask:
                             now = time.monotonic()
                             if now - last_emit >= PROGRESS_INTERVAL_SECONDS:
                                 last_emit = now
+                                if self.total_bytes > 0:
+                                    _reserve(self, self.total_bytes - self.downloaded_bytes)
                                 self.speed_mbps = self._meter.speed_mbps
                                 if self.total_bytes > 0:
                                     self.eta_seconds = self._meter.eta_seconds(
