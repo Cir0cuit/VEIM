@@ -4,7 +4,28 @@ from typing import Optional, List, Dict
 import re
 import requests
 import random
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from src.core.logger import log
+
+# A server error is a hiccup, not an answer. Two more tries, a second or two
+# apart, cover the kind cdimage.debian.org has; then it is refused.
+SERVER_ERROR_STATUSES = (500, 502, 503, 504)
+SERVER_ERROR_RETRIES = 2
+SERVER_ERROR_BACKOFF = 1.0
+
+
+def _refuse_server_errors(response, *args, **kwargs):
+    """Session hook: a 5xx that survived the retries is raised, never parsed.
+
+    The body of an error page holds no download links, and a recipe that
+    searched it reported "no current release" for a release that was there.
+    """
+    if response.status_code >= 500:
+        raise requests.HTTPError(
+            f"{response.url.split('//', 1)[-1].split('/', 1)[0]} answered "
+            f"HTTP {response.status_code}", response=response)
+    return response
 
 
 class ScrapeError(Exception):
@@ -95,6 +116,14 @@ class DistroRecipe(ABC):
         ]
 
     def get_session(self) -> requests.Session:
+        """A session for reading release pages.
+
+        A server error is retried, then refused: cdimage.debian.org answers
+        500 for a request or two at a time, and a recipe that parsed the
+        error page as a listing reported "no current release" for a release
+        that was there. A 4xx still comes back as a response - a 404 is an
+        answer several recipes read ("that release has no images yet").
+        """
         session = requests.Session()
         ua = random.choice(self.user_agents)
         session.headers.update({
@@ -104,6 +133,13 @@ class DistroRecipe(ABC):
             "DNT": "1",
             "Upgrade-Insecure-Requests": "1"
         })
+        adapter = HTTPAdapter(max_retries=Retry(
+            total=SERVER_ERROR_RETRIES, status_forcelist=SERVER_ERROR_STATUSES,
+            allowed_methods=("GET", "HEAD"), backoff_factor=SERVER_ERROR_BACKOFF,
+            raise_on_status=False))
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        session.hooks["response"].append(_refuse_server_errors)
         return session
 
     @abstractmethod
