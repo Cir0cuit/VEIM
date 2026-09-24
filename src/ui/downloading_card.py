@@ -7,11 +7,9 @@ numbers live in the meta line, stated once.
 """
 from typing import Callable, Optional
 
-from PySide6.QtWidgets import QProgressBar, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QProgressBar
 
 from src.core.downloader import DownloadTask
-from src.core.icons import icon_manager
 from src.ui.components import Row, make_button, fmt_eta
 from src.ui.theme import ThemeColors
 

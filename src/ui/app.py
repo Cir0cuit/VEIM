@@ -1,13 +1,10 @@
-import sys
 from typing import Optional
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 from src.ui.theme import theme_manager, generate_stylesheet, ThemeColors
 from src.ui.drive_picker import DrivePickerView
 from src.ui.workspace import Workspace
 from src.ui.update_prompt import UpdateNotifier
 from src.core.icons import icon_manager
-from src.core.logger import log
 
 class VEIMMainWindow(QMainWindow):
     """Root window: the drive picker, then the workspace."""

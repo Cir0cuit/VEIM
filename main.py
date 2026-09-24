@@ -13,7 +13,6 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
 from src.ui.app import VEIMMainWindow
 from src.core.branding import app_icon, claim_taskbar_identity
 from src import __version__

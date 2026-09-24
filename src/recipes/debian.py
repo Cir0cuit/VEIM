@@ -12,7 +12,6 @@ that is mid-update can carry two.
 import re
 from typing import List, Optional, Tuple
 
-import requests
 from bs4 import BeautifulSoup
 
 from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError

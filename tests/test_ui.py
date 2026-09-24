@@ -736,7 +736,6 @@ def _adopt_everything(ws):
 def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp_path, monkeypatch):
     """Regression: with two ISOs of one distro on the drive, Remove on the
     second row asked about the second and then deleted the first."""
-    from PySide6.QtWidgets import QMessageBox
 
     ws = workspace
     managed = tmp_path / "Managed_ISOs"

@@ -7,7 +7,6 @@ environment, loaded VEIM's libraries instead of the system's, and died without
 a word.
 """
 import os
-import subprocess
 import sys
 
 import pytest

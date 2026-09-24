@@ -12,22 +12,18 @@ import os
 import tempfile
 import shutil
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QPixmap
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 from src.ui.app import VEIMMainWindow
-from src.ui.drive_picker import DrivePickerView, DriveCard
 from src.ui.dashboard import DashboardView
 from src.ui.downloading_card import DownloadingCard
 from src.ui.catalog_view import CatalogView
 from src.ui.theme import theme_manager
 from src.core.drive import DriveInfo, DriveDetector
 from src.core.downloader import DownloadTask
-from src.core.inventory import InventoryItem
 
 ARTIFACTS_DIR = os.environ.get(
     "VEIM_SCREENSHOT_DIR",

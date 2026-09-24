@@ -3,14 +3,12 @@ import os
 import shutil
 import tempfile
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRATCH_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SCRATCH_DIR not in sys.path:
     sys.path.insert(0, SCRATCH_DIR)
 
-from src.core.inventory import InventoryManager
 from src.core.icons import icon_manager
 from src.recipes.registry import registry
 from src.ui.theme import theme_manager
@@ -94,7 +92,7 @@ def test_suite():
         assert bridge_received.get("ck") == test_ck
         assert bridge_received.get("version") == "3.22.0"
         assert card.latest_detected_version == "3.22.0"
-        print(f"  [OK] Thread-safe signal bridge successfully updated card state to v3.22.0!")
+        print("  [OK] Thread-safe signal bridge successfully updated card state to v3.22.0!")
 
         # 6. Test Removal Flow
         print("[TEST 6] Testing Inventory Removal...")

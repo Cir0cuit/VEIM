@@ -3,8 +3,8 @@ import sys
 import tempfile
 import shutil
 from PySide6.QtWidgets import QApplication, QPushButton
-from src.ui.theme import theme_manager, ThemeSelector
-from src.ui.drive_picker import DrivePickerView, DriveCard
+from src.ui.theme import theme_manager
+from src.ui.drive_picker import DriveCard
 from src.core.drive import DriveInfo
 from src.ui.dashboard import DashboardView
 from src.ui.distro_card import DistroCard

@@ -4,7 +4,6 @@ import shutil
 import tempfile
 import time
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QCoreApplication
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRATCH_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,7 +11,6 @@ if SCRATCH_DIR not in sys.path:
     sys.path.insert(0, SCRATCH_DIR)
 
 from src.recipes.registry import registry
-from src.core.downloader import DownloadTask
 from src.ui.dashboard import DashboardView
 
 def test_live():

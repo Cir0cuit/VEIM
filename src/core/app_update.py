@@ -22,7 +22,6 @@ which only the automatic check consults - somebody who presses the button is
 asking, and gets an answer whatever they refused before.
 """
 import json
-import os
 import time
 from dataclasses import dataclass
 from typing import Optional

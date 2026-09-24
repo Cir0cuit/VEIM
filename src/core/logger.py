@@ -1,6 +1,5 @@
 import logging
 import sys
-from pathlib import Path
 
 from src.core import paths
 

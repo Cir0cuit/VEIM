@@ -16,7 +16,7 @@ from PySide6.QtGui import QCursor
 from src import __version__
 from src.core.drive import DriveInfo, DriveDetector
 from src.core.logger import log
-from src.ui.components import CapacityBar, Pill, make_button, EmptyState, elide
+from src.ui.components import CapacityBar, Pill, make_button, EmptyState
 from src.ui.theme import theme_manager, ThemeButton
 from src.ui.update_button import UpdateCheckButton
 

@@ -26,7 +26,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from src.core.icons import ICON_URLS, IconManager  # noqa: E402
+from src.core.icons import ICON_URLS  # noqa: E402
 
 HEADERS = {"User-Agent": "VEIM-icon-audit/1.0 (+https://github.com/Cir0cuit/VEIM)"}
 CACHE_DIR = os.path.join(BASE_DIR, "src", "assets", "icons")

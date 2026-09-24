@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict
+from dataclasses import dataclass
+from typing import List
 import re
 import requests
 import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from src.core.logger import log
 
 # A server error is a hiccup, not an answer. Two more tries, a second or two
 # apart, cover the kind cdimage.debian.org has; then it is refused.

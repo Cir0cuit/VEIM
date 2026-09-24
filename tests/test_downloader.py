@@ -399,7 +399,6 @@ def test_the_row_is_told_about_each_retry(tmp_path, monkeypatch):
 
 
 def test_cancel_during_the_retry_pause_stops_at_once(tmp_path, monkeypatch):
-    import threading
     import time
     from src.core import downloader
     monkeypatch.setattr(downloader, "RETRY_DELAYS_SECONDS", (30, 30, 30, 30))

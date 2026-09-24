@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from typing import Callable, List, Dict
-from PySide6.QtWidgets import QPushButton, QMenu, QComboBox
+from PySide6.QtWidgets import QPushButton, QMenu
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCursor, QAction
 

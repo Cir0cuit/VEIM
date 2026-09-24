@@ -9,16 +9,14 @@ from typing import Callable, Dict, List, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
-    QFrame, QComboBox, QButtonGroup, QPushButton, QProgressBar, QSizePolicy
+    QFrame, QComboBox, QButtonGroup, QPushButton, QProgressBar
 )
 from PySide6.QtCore import Qt
 
 from src.core.recipe_base import DistroRecipe, FlavorInfo
-from src.core.icons import icon_manager
 from src.recipes.registry import registry
 from src.ui.components import (
     Row, Pill, FlowLayout, FlavorCombo, make_button, fmt_eta, EmptyState)
-from src.ui.theme import theme_manager
 
 
 class CatalogRow(Row):

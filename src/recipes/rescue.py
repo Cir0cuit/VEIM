@@ -1,6 +1,5 @@
 import re
 from typing import List
-from bs4 import BeautifulSoup
 from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
 from src.core.logger import log
 

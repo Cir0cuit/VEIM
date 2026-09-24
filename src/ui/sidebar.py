@@ -4,16 +4,15 @@ Replaces the old floating toolbar, where the drive path, four buttons and the
 theme picker competed for one 64px strip and the path ended up clipped
 underneath the buttons.
 """
-from typing import Callable, Optional
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QButtonGroup, QFrame
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QButtonGroup
 )
 from PySide6.QtCore import Qt, Signal
 
 from src import __version__
 from src.ui.components import CapacityBar, ElidingLabel, make_button
-from src.ui.theme import theme_manager, ThemeButton
+from src.ui.theme import ThemeButton
 
 SIDEBAR_WIDTH = 232
 
