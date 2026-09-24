@@ -94,7 +94,7 @@ def test_shipped_logo_is_not_blank(name):
     with Image.open(os.path.join(ROOT, "src", "assets", "icons", name)) as image:
         rgba = image.convert("RGBA")
         width, height = rgba.size
-        opaque = sum(1 for pixel in rgba.getdata() if pixel[3] > 8)
+        opaque = sum(1 for alpha in rgba.getchannel("A").tobytes() if alpha > 8)
 
     assert width >= 32 and height >= 32, f"{name} is {width}x{height}"
     assert opaque > width * height * 0.01, f"{name} rendered blank"
