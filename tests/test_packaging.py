@@ -89,15 +89,9 @@ def test_every_distribution_ships_a_logo():
 def test_shipped_logo_is_not_blank(name):
     """Qt renders a subset of SVG and fails silently on the rest, writing a
     transparent image rather than none."""
-    from PIL import Image
+    from tools.fetch_icons import inspect
 
-    with Image.open(os.path.join(ROOT, "src", "assets", "icons", name)) as image:
-        rgba = image.convert("RGBA")
-        width, height = rgba.size
-        opaque = sum(1 for alpha in rgba.getchannel("A").tobytes() if alpha > 8)
-
-    assert width >= 32 and height >= 32, f"{name} is {width}x{height}"
-    assert opaque > width * height * 0.01, f"{name} rendered blank"
+    assert not inspect(os.path.join(ROOT, "src", "assets", "icons", name))
 
 
 def test_logos_resolve_without_a_writable_cache(tmp_path, qapp):
@@ -173,11 +167,11 @@ def test_publishing_survives_a_release_that_already_exists():
 
 
 def test_the_declared_version_is_a_release_number():
-    from packaging.version import Version
-
+    """Plain X.Y.Z: the update check compares the numbers alone, so a 1.0.8rc1
+    would never be offered 1.0.8."""
     from src import __version__
 
-    assert Version(__version__)
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__), __version__
     assert f'version = "{__version__}"' in read(ROOT, "pyproject.toml")
 
 

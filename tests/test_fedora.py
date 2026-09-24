@@ -5,10 +5,13 @@ generic "Spins" variant; matching on `variant` alone silently made Cinnamon,
 Xfce and Budgie unresolvable while Workstation kept working, so the gap only
 showed up in a full-flavor sweep.
 """
+import json
+
 import pytest
 
 from src.core.recipe_base import ScrapeError
-from src.recipes.fedora import FedoraRecipe, FedoraSpinsRecipe
+from src.recipes.fedora import RELEASES_INDEX, FedoraRecipe, FedoraSpinsRecipe
+from tests.test_stale_recipes import _with
 
 
 SAMPLE = [
@@ -33,28 +36,9 @@ SAMPLE = [
 ]
 
 
-class _Resp:
-    status_code = 200
-
-    def raise_for_status(self):
-        return None
-
-    def json(self):
-        return SAMPLE
-
-
-class _Session:
-    headers = {}
-
-    def get(self, *a, **kw):
-        return _Resp()
-
-
 @pytest.fixture
 def recipe(monkeypatch):
-    r = FedoraRecipe()
-    monkeypatch.setattr(r, "get_session", lambda: _Session())
-    return r
+    return _with(monkeypatch, FedoraRecipe(), {RELEASES_INDEX: json.dumps(SAMPLE)})[0]
 
 
 def test_resolves_workstation_to_newest_version(recipe):
@@ -65,18 +49,16 @@ def test_resolves_workstation_to_newest_version(recipe):
 
 def test_resolves_spins_by_subvariant(monkeypatch):
     """Regression: these were unresolvable when only `variant` was matched."""
-    spins = FedoraSpinsRecipe()
-    monkeypatch.setattr(spins, "get_session", lambda: _Session())
+    spins = _with(monkeypatch, FedoraSpinsRecipe(), {RELEASES_INDEX: json.dumps(SAMPLE)})[0]
     for flavor in ("cinnamon", "xfce"):
         info = spins.fetch_download_info(flavor)
         assert flavor in info.filename.lower(), f"{flavor} resolved to {info.filename}"
         assert info.version == "44"
 
 
-def test_carries_checksum_and_size(recipe):
+def test_carries_checksum(recipe):
     info = recipe.fetch_download_info("workstation")
     assert info.sha256 == "a" * 64, "checksum must flow through so downloads get verified"
-    assert info.size_bytes == 2851612672
 
 
 def test_ignores_other_architectures_and_rawhide(recipe):

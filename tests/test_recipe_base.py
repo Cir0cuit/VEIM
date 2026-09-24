@@ -1,7 +1,7 @@
-"""Version normalisation and the fail-loud contract."""
+"""Version normalisation, page parsing and the fail-loud contract."""
 import pytest
 
-from src.core.recipe_base import DownloadInfo, ScrapeError, clean_version
+from src.core.recipe_base import DownloadInfo, ScrapeError, clean_version, hrefs, table_rows
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -30,3 +30,16 @@ def test_scrape_error_carries_distro_and_reason():
     assert err.distro == "Zorin OS"
     assert "release feed" in err.reason
     assert "Zorin OS" in str(err)
+
+
+def test_hrefs_are_every_link_target_decoded():
+    page = '<a href="../">..</a><a name="top"></a><A HREF="a&amp;b.iso"/><link href="x.css">'
+    assert hrefs(page) == ["../", "a&b.iso"]
+
+
+def test_table_rows_are_the_text_of_each_cell():
+    """The shape of linuxmint.com's release table: the version is a row's first cell."""
+    page = ('<table><tr><th>Version</th></tr>'
+            '<tr><td rowspan="3">22.3</td><td><a href="edition.php?id=326">Cinnamon </a></td></tr>'
+            '<tr><td><a href="edition.php?id=328">MATE </a></td></tr></table><p>22.2</p>')
+    assert table_rows(page) == [[], ["22.3", "Cinnamon"], ["MATE"]]

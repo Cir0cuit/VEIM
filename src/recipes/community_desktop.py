@@ -1,27 +1,21 @@
 import re
 from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs
 from src.core.logger import log
 
 class OpenSUSERecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="opensuse",
-            name="openSUSE",
-            category="Popular & Desktop",
-            description="Enterprise-grade Linux distribution with YaST and Snapper Btrfs integration."
-        )
+    key = "opensuse"
+    name = "openSUSE"
+    description = "Enterprise-grade Linux distribution with YaST and Snapper Btrfs integration."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("tumbleweed-dvd", "Tumbleweed (Offline DVD)", "Rolling release with cutting-edge software and complete offline installer."),
-            FlavorInfo("tumbleweed-kde", "Tumbleweed Live (KDE Plasma)", "Rolling release bootable live desktop powered by KDE Plasma."),
-            FlavorInfo("tumbleweed-gnome", "Tumbleweed Live (GNOME)", "Rolling release bootable live desktop powered by GNOME."),
-            FlavorInfo("tumbleweed-net", "Tumbleweed (Network Install)", "Minimal network installer downloading packages directly from online repositories."),
-            FlavorInfo("leap-dvd", "Leap (Offline DVD)", "Regular release with rock-solid SLE (SUSE Linux Enterprise) core."),
-            FlavorInfo("leap-net", "Leap (Network Install)", "Minimal network installer for the current openSUSE Leap.")
-        ]
+    FLAVORS = [
+        FlavorInfo("tumbleweed-dvd", "Tumbleweed (Offline DVD)"),
+        FlavorInfo("tumbleweed-kde", "Tumbleweed Live (KDE Plasma)"),
+        FlavorInfo("tumbleweed-gnome", "Tumbleweed Live (GNOME)"),
+        FlavorInfo("tumbleweed-net", "Tumbleweed (Network Install)"),
+        FlavorInfo("leap-dvd", "Leap (Offline DVD)"),
+        FlavorInfo("leap-net", "Leap (Network Install)")
+    ]
 
     MIRROR = "https://download.opensuse.org/"
     # Where openSUSE itself says which Leap is current. The mirror cannot: it
@@ -112,19 +106,14 @@ class OpenSUSERecipe(DistroRecipe):
 
 
 class NixOSRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="nixos",
-            name="NixOS",
-            category="Popular & Desktop",
-            description="Declarative, purely functional operating system built upon the Nix package manager."
-        )
+    key = "nixos"
+    name = "NixOS"
+    description = "Declarative, purely functional operating system built upon the Nix package manager."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("graphical", "Graphical Live Installer (GNOME)", "Full live desktop environment with Calamares graphical installer."),
-            FlavorInfo("minimal", "Minimal Console Edition", "Minimal CLI installation image with complete Nix toolchain.")
-        ]
+    FLAVORS = [
+        FlavorInfo("graphical", "Graphical Live Installer (GNOME)"),
+        FlavorInfo("minimal", "Minimal Console Edition")
+    ]
 
     CHANNEL_ROOT = "https://channels.nixos.org/nixos-{channel}/"
 
@@ -139,23 +128,9 @@ class NixOSRecipe(DistroRecipe):
         """
         from datetime import date
         today = today or date.today()
-        candidates = []
-        year, month = today.year, today.month
-        # Walk back from the release that would be current today.
-        for _ in range(4):
-            candidates.append(f"{year % 100:02d}.11" if month > 11 or month >= 11 else f"{year % 100:02d}.05")
-            if month >= 11:
-                month = 5
-            else:
-                month = 11
-                year -= 1
-        # De-duplicate, preserving order.
-        seen, ordered = set(), []
-        for c in candidates:
-            if c not in seen:
-                seen.add(c)
-                ordered.append(c)
-        return ordered
+        # Count in half-years, from the release that would be current today.
+        half = 2 * today.year + (today.month >= 11)
+        return [f"{n // 2 % 100:02d}.{'11' if n % 2 else '05'}" for n in range(half, half - 4, -1)]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         target = flavor_id.lower()
@@ -193,18 +168,13 @@ class NixOSRecipe(DistroRecipe):
 
 
 class ElementaryRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="elementary",
-            name="elementary OS",
-            category="Popular & Desktop",
-            description="Thoughtfully crafted, privacy-respecting OS with the custom Pantheon desktop environment."
-        )
+    key = "elementary"
+    name = "elementary OS"
+    description = "Thoughtfully crafted, privacy-respecting OS with the custom Pantheon desktop environment."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("stable", "Standard 64-bit Edition", "Latest stable release featuring AppCenter and modern Flatpak integration.")
-        ]
+    FLAVORS = [
+        FlavorInfo("stable", "Standard 64-bit Edition")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -228,30 +198,23 @@ class ElementaryRecipe(DistroRecipe):
 
 
 class TuxedoRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="tuxedo",
-            name="TUXEDO OS",
-            category="Popular & Desktop",
-            description="Optimized Ubuntu-based distribution with KDE Plasma, PipeWire, and hardware tuning."
-        )
+    key = "tuxedo"
+    name = "TUXEDO OS"
+    description = "Optimized Ubuntu-based distribution with KDE Plasma, PipeWire, and hardware tuning."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Standard Edition (KDE Plasma)", "Flagship desktop with custom TUXEDO Control Center and kernel enhancements.")
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Standard Edition (KDE Plasma)")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
         try:
             r = session.get("https://os.tuxedocomputers.com/", timeout=8)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
                 # Every dated image listed, newest taken - not the first link,
                 # which is the newest only while the listing is sorted that way.
                 found = {}
-                for a in soup.find_all("a"):
-                    h = a.get("href", "")
+                for h in hrefs(r.text):
                     m = re.fullmatch(r'TUXEDO-OS-(\d{12})\.iso', h.split("/")[-1])
                     if m:
                         found[m.group(1)] = h
@@ -266,21 +229,16 @@ class TuxedoRecipe(DistroRecipe):
 
 
 class MageiaRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="mageia",
-            name="Mageia",
-            category="Popular & Desktop",
-            description="Community-driven fork of Mandriva featuring the powerful Mageia Control Center."
-        )
+    key = "mageia"
+    name = "Mageia"
+    description = "Community-driven fork of Mandriva featuring the powerful Mageia Control Center."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("classic-dvd", "Classic Installer (DVD)", "Full offline installation DVD with all desktop environments."),
-            FlavorInfo("live-plasma", "Live Edition (KDE Plasma)", "Bootable Live session with KDE Plasma."),
-            FlavorInfo("live-gnome", "Live Edition (GNOME)", "Bootable Live session with GNOME."),
-            FlavorInfo("live-xfce", "Live Edition (Xfce)", "Bootable Live session with lightweight Xfce.")
-        ]
+    FLAVORS = [
+        FlavorInfo("classic-dvd", "Classic Installer (DVD)"),
+        FlavorInfo("live-plasma", "Live Edition (KDE Plasma)"),
+        FlavorInfo("live-gnome", "Live Edition (GNOME)"),
+        FlavorInfo("live-xfce", "Live Edition (Xfce)")
+    ]
 
     MIRROR = "https://distrib-coffee.ipsl.jussieu.fr/pub/linux/Mageia/iso/"
 

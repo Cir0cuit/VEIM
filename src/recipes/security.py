@@ -1,17 +1,11 @@
 import re
-from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs
 from src.core.logger import log
 
 class KaliRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="kali",
-            name="Kali Linux",
-            category="Security & Pentest",
-            description="The premier standard in penetration testing and security auditing."
-        )
+    key = "kali"
+    name = "Kali Linux"
+    description = "The premier standard in penetration testing and security auditing."
 
     # flavor -> the part of the image name that says which one it is.
     # The Live image and both "Everything" images are missing on purpose: Kali
@@ -22,12 +16,11 @@ class KaliRecipe(DistroRecipe):
         "purple": "installer-purple",
     }
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("installer", "Installer", "Offline installer with the default toolset."),
-            FlavorInfo("netinst", "Network Installer", "Small installer that fetches packages during setup."),
-            FlavorInfo("purple", "Kali Purple", "Defensive security architecture, SOC in-a-box & incident response."),
-        ]
+    FLAVORS = [
+        FlavorInfo("installer", "Installer"),
+        FlavorInfo("netinst", "Network Installer"),
+        FlavorInfo("purple", "Kali Purple"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -49,30 +42,24 @@ class KaliRecipe(DistroRecipe):
             try:
                 r = session.get(base_url, timeout=10)
                 if r.status_code == 200:
-                    soup = BeautifulSoup(r.text, "html.parser")
-                    for a in soup.find_all("a", href=True):
-                        m = pattern.fullmatch(a["href"])
+                    for href in hrefs(r.text):
+                        m = pattern.fullmatch(href)
                         if m:
-                            return DownloadInfo(version=m.group(1), url=base_url + a["href"], filename=a["href"])
+                            return DownloadInfo(version=m.group(1), url=base_url + href, filename=href)
             except Exception as e:
                 log.warning(f"[Kali] Mirror {base_url} error: {e}")
 
         raise ScrapeError(self.name, f"no current {target} image listed on cdimage.kali.org")
 
 class ParrotRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="parrot",
-            name="Parrot OS",
-            category="Security & Pentest",
-            description="Security, privacy, and development-oriented Linux distribution."
-        )
+    key = "parrot"
+    name = "Parrot OS"
+    description = "Security, privacy, and development-oriented Linux distribution."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("security", "Security Edition", "Complete arsenal for penetration testing and digital forensics."),
-            FlavorInfo("home", "Home Edition", "Daily-driver lightweight workstation environment.")
-        ]
+    FLAVORS = [
+        FlavorInfo("security", "Security Edition"),
+        FlavorInfo("home", "Home Edition")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -82,10 +69,9 @@ class ParrotRecipe(DistroRecipe):
         try:
             r = session.get(base_url, timeout=10)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
                 versions = []
-                for a in soup.find_all("a", href=True):
-                    href = a["href"].strip("/")
+                for href in hrefs(r.text):
+                    href = href.strip("/")
                     if href and href[0].isdigit():
                         versions.append(href)
                 
@@ -95,9 +81,7 @@ class ParrotRecipe(DistroRecipe):
                 target_dir = f"{base_url}{latest_v}/"
                 r2 = session.get(target_dir, timeout=10)
                 if r2.status_code == 200:
-                    soup2 = BeautifulSoup(r2.text, "html.parser")
-                    for a in soup2.find_all("a", href=True):
-                        href = a["href"]
+                    for href in hrefs(r2.text):
                         if href.endswith(".iso") and target in href.lower() and "amd64" in href:
                             return DownloadInfo(version=latest_v, url=target_dir + href, filename=href)
         except Exception as e:
@@ -107,18 +91,13 @@ class ParrotRecipe(DistroRecipe):
 
 
 class CaineRecipe(DistroRecipe):
+    key = "caine"
+    name = "CAINE"
+    description = "Digital forensics live system: mounts every disk read-only until told otherwise."
+
     PAGE = "https://www.caine-live.net/page5/page5.html"
 
-    def __init__(self):
-        super().__init__(
-            key="caine",
-            name="CAINE",
-            category="Security & Pentest",
-            description="Digital forensics live system: mounts every disk read-only until told otherwise.",
-        )
-
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [FlavorInfo("standard", "Live 64-bit", "Forensic live environment.")]
+    FLAVORS = [FlavorInfo("standard", "Live 64-bit")]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()

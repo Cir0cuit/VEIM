@@ -2,16 +2,7 @@
 import json
 import time
 
-import pytest
-
 from src.core import app_update
-
-
-@pytest.fixture
-def state_file(tmp_path, monkeypatch):
-    path = tmp_path / "update_check.json"
-    monkeypatch.setattr(app_update.paths, "state_path", lambda _name: str(path))
-    return path
 
 
 class _Response:
@@ -85,8 +76,7 @@ def test_every_start_asks(state_file, monkeypatch):
 def test_a_check_that_cannot_reach_github_offers_what_was_known(state_file, monkeypatch):
     """Found yesterday, still worth offering on a train today."""
     state_file.write_text(json.dumps(
-        {"last_check": time.time(),
-         "pending": {"version": "2.0.0", "url": "https://example.invalid/v2"}}),
+        {"pending": {"version": "2.0.0", "url": "https://example.invalid/v2"}}),
         encoding="utf-8")
     monkeypatch.setattr(app_update.requests, "get", _offline)
 
@@ -97,9 +87,8 @@ def test_a_check_that_cannot_reach_github_offers_what_was_known(state_file, monk
 
 def test_a_state_file_missing_fields_does_not_raise(state_file, monkeypatch):
     """This file outlives the version that wrote it."""
-    state_file.write_text(json.dumps(
-        {"last_check": time.time(), "pending": {"version": "9.9.9"}}),
-        encoding="utf-8")
+    state_file.write_text(json.dumps({"pending": {"version": "9.9.9"}}),
+                          encoding="utf-8")
     monkeypatch.setattr(app_update.requests, "get", _offline)
 
     release = app_update.check(installed="1.0.1")

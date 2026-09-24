@@ -10,11 +10,9 @@ The newest release in the listing is taken by version number; a directory
 that is mid-update can carry two.
 """
 import re
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
-from bs4 import BeautifulSoup
-
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
 from src.core.logger import log
 
 # The same tree, at Debian's two official front doors.
@@ -26,31 +24,22 @@ NETINST_DIR = "current/amd64/iso-cd/"
 LIVE_DIR = "current-live/amd64/iso-hybrid/"
 
 
-def _numeric(version: str) -> Tuple[int, ...]:
-    return tuple(int(p) for p in version.split("."))
-
-
 class DebianRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="debian",
-            name="Debian",
-            category="Popular & Desktop",
-            description="The Universal Operating System: legendary rock-solid stability."
-        )
+    key = "debian"
+    name = "Debian"
+    description = "The Universal Operating System: legendary rock-solid stability."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("netinst", "Netinst (Network Installer)", "Minimal installer; fetches packages during setup."),
-            FlavorInfo("gnome", "Live GNOME", "Full live environment with GNOME desktop."),
-            FlavorInfo("kde", "Live KDE Plasma", "Full live environment with KDE Plasma desktop."),
-            FlavorInfo("xfce", "Live Xfce", "Lightweight live environment with Xfce desktop."),
-            FlavorInfo("cinnamon", "Live Cinnamon", "Full live environment with Cinnamon desktop."),
-            FlavorInfo("mate", "Live MATE", "Full live environment with MATE desktop."),
-            FlavorInfo("lxqt", "Live LXQt", "Very light live environment with LXQt desktop."),
-            FlavorInfo("lxde", "Live LXDE", "Very light live environment with LXDE desktop."),
-            FlavorInfo("standard", "Live Standard (Console)", "Minimal console-only live rescue environment.")
-        ]
+    FLAVORS = [
+        FlavorInfo("netinst", "Netinst (Network Installer)"),
+        FlavorInfo("gnome", "Live GNOME"),
+        FlavorInfo("kde", "Live KDE Plasma"),
+        FlavorInfo("xfce", "Live Xfce"),
+        FlavorInfo("cinnamon", "Live Cinnamon"),
+        FlavorInfo("mate", "Live MATE"),
+        FlavorInfo("lxqt", "Live LXQt"),
+        FlavorInfo("lxde", "Live LXDE"),
+        FlavorInfo("standard", "Live Standard (Console)")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         target = flavor_id.lower()
@@ -74,10 +63,10 @@ class DebianRecipe(DistroRecipe):
                 continue
 
             newest: Optional[Tuple[Tuple[int, ...], str, str]] = None
-            for a in BeautifulSoup(resp.text, "html.parser").find_all("a", href=True):
-                m = pattern.fullmatch(a["href"])
-                if m and (newest is None or _numeric(m.group(1)) > newest[0]):
-                    newest = (_numeric(m.group(1)), m.group(1), a["href"])
+            for href in hrefs(resp.text):
+                m = pattern.fullmatch(href)
+                if m and (newest is None or version_key(m.group(1)) > newest[0]):
+                    newest = (version_key(m.group(1)), m.group(1), href)
             if newest is None:
                 reasons.append(f"{base_url}: no {target} image in the listing")
                 continue

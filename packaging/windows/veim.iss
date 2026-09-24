@@ -26,13 +26,11 @@ VersionInfoVersion={#AppVersion}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-DisableDirPage=auto
 LicenseFile=..\..\LICENSE
 OutputDir=..\..\dist\installer
 OutputBaseFilename=VEIM-{#AppVersion}-windows-setup
 SetupIconFile=..\..\src\assets\branding\veim.ico
 UninstallDisplayIcon={app}\{#AppExe}
-UninstallDisplayName={#AppName} {#AppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -49,7 +47,6 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"
 
 [Files]
-Source: "..\..\dist\VEIM\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\dist\VEIM\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

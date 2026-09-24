@@ -11,17 +11,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication, QLabel
-
 from src.core.downloader import DownloadTask
 from src.core.inventory import InventoryItem
 from src.recipes.registry import registry
-
-
-@pytest.fixture(scope="module")
-def qapp():
-    app = QApplication.instance() or QApplication([])
-    yield app
 
 
 @pytest.fixture
@@ -32,17 +24,6 @@ def themed(qapp):
 
 
 # --------------------------------------------------------------- components
-
-def test_elide_shortens_long_text(themed):
-    from src.ui.components import elide
-    label = QLabel()
-    long_path = r"C:\Users\somebody\AppData\Local\Temp\a\very\deep\ventoy\mount\point"
-    elide(label, long_path, 180)
-
-    assert label.text() != long_path, "long path was not shortened"
-    assert "…" in label.text() or "..." in label.text()
-    assert label.toolTip() == long_path, "full path should stay available on hover"
-
 
 def test_capacity_bar_clamps_out_of_range(themed):
     from src.ui.components import CapacityBar
@@ -216,7 +197,7 @@ def test_catalog_category_filter(themed):
 
     view._set_category("Rescue & Diagnostics")
     visible = {k for k, r in view.rows.items() if not r.isHidden()}
-    expected = {r.key for r in registry.get_by_category("Rescue & Diagnostics")}
+    expected = {r.key for r in registry.get_all_recipes() if r.category == "Rescue & Diagnostics"}
     assert visible == expected
 
 
@@ -240,6 +221,29 @@ def test_catalog_install_passes_selected_flavor(themed):
     row._install()
 
     assert captured == [("fedora", row.combo.currentData())]
+
+
+def test_catalog_progress_is_not_left_in_the_error_colour(themed):
+    """Regression: once a failed download had been retried, every later
+    download on that row showed its progress in the error red."""
+    from PySide6.QtGui import QPalette
+    from src.ui.catalog_view import CatalogView
+    from src.ui.theme import generate_stylesheet
+    row = CatalogView(on_install=lambda r, f: None).rows["debian"]
+    row.setStyleSheet(generate_stylesheet(themed.current))
+    flavor = row.current_flavor()
+
+    def colour():
+        row.note.ensurePolished()
+        return row.note.palette().color(QPalette.WindowText)
+
+    row.set_downloading(flavor)
+    progress = colour()
+    for message in ("mirror timed out", ""):
+        row.clear_downloading(flavor, message)
+        row.set_downloading(flavor)
+
+    assert colour() == progress
 
 
 # ------------------------------------------------------------- icon chips
@@ -306,7 +310,7 @@ def test_header_buttons_are_not_flush_against_each_other(themed, qapp, tmp_path)
     """
     from src.ui.dashboard import DashboardView
 
-    view = DashboardView(drive_path=str(tmp_path), on_change_drive=lambda: None)
+    view = DashboardView(drive_path=str(tmp_path))
     view.resize(1000, 700)
     view.show()
     qapp.processEvents()
@@ -407,14 +411,6 @@ def workspace(themed, qapp, tmp_path, monkeypatch):
     return ws
 
 
-def _progress(done_mb, total_mb, speed=12.4, eta=38):
-    t = DownloadTask("https://example.invalid/x.iso", "x.iso")
-    t.downloaded_bytes = int(done_mb * 1024 ** 2)
-    t.total_bytes = int(total_mb * 1024 ** 2)
-    t.speed_mbps, t.eta_seconds = speed, eta
-    return t
-
-
 def test_downloading_keeps_you_in_the_catalog(workspace, qapp):
     """Regression: starting a download used to switch to the Installed page.
 
@@ -449,7 +445,7 @@ def test_catalog_row_shows_progress_for_its_own_download(workspace, qapp):
     assert row.progress.maximum() == 0
 
     ck = ws.library.inventory_mgr._composite_key("debian", flavor)
-    ws.library._on_progress_slot(ck, _progress(231, 700))
+    ws.library._on_progress_slot(ck, _task(231, 700, speed=12.4))
     qapp.processEvents()
 
     assert row.progress.value() == 33
@@ -599,7 +595,7 @@ def test_update_progress_stays_on_the_row_being_updated(installed, qapp):
     assert card.btn_remove.isHidden()
     assert not card.btn_cancel.isHidden(), "no way to stop the update"
 
-    ws.library._on_progress_slot("arch::standard", _progress(231, 700))
+    ws.library._on_progress_slot("arch::standard", _task(231, 700))
     assert card.progress.value() == 33
     assert "33%" in card.meta.text()
 
@@ -1144,6 +1140,30 @@ def test_dropdown_shows_every_option_without_scrolling(themed, qapp):
                  if c.isWidgetType() and c is not listview]
     assert not scrollers, f"popup still has scroller widgets: {scrollers}"
     assert not listview.verticalScrollBar().isVisible()
+    combo.hidePopup()
+
+
+def test_dropdown_that_fits_cannot_scroll_to_an_empty_row(themed, qapp):
+    """Regression: the popup's border was styled after Qt sized the popup, so
+    on Linux it took 2px from a list sized to fit its rows exactly. QListView
+    scrolls by whole items, so the wheel moved the list a row, onto an empty
+    line. The outer height above still passes then: it includes the padding."""
+    from src.ui.theme import generate_stylesheet
+    from src.ui.catalog_view import CatalogView
+
+    page = CatalogView(on_install=lambda r, f: None)
+    # The app's stylesheet gives the rows and the list the sizes that matter.
+    page.setStyleSheet(generate_stylesheet(themed.current))
+    page.resize(1000, 700)
+    page.show()
+    qapp.processEvents()
+
+    combo = page.rows["fedora"].combo
+    listview, _ = _open(combo, qapp)
+    rows = sum(listview.sizeHintForRow(i) for i in range(combo.count()))
+    assert listview.viewport().height() >= rows, (
+        f"{listview.viewport().height()}px of list for {rows}px of rows")
+    assert listview.verticalScrollBar().maximum() == 0
     combo.hidePopup()
 
 

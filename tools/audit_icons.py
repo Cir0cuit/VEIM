@@ -20,7 +20,7 @@ import sys
 import urllib.parse
 
 import requests
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageStat
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
@@ -62,11 +62,6 @@ def normalise(img: Image.Image) -> Image.Image:
     return flat.convert("L").resize((64, 64), Image.Resampling.LANCZOS)
 
 
-def mean_difference(a: Image.Image, b: Image.Image) -> float:
-    diff = ImageChops.difference(a, b)
-    return sum(i * count for i, count in enumerate(diff.histogram())) / (64 * 64)
-
-
 def main() -> int:
     suspect = []
     checked = 0
@@ -92,7 +87,7 @@ def main() -> int:
             print(f"  {key:14s} ERROR {type(exc).__name__}: {exc}")
             continue
 
-        score = mean_difference(reference, ours)
+        score = ImageStat.Stat(ImageChops.difference(reference, ours)).mean[0]
         checked += 1
         if score > DIFFERENCE_THRESHOLD:
             suspect.append((score, key, thumb))

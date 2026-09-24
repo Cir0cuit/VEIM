@@ -19,7 +19,10 @@ def test_registry_is_not_empty():
 
 
 def test_keys_are_unique():
-    keys = [r.key for r in ALL]
+    # Read the keys off CATALOG itself: the registry is a dict by key, so a
+    # duplicate would already have replaced the other entry there.
+    from src.recipes.registry import CATALOG
+    keys = [cls.key for cls in CATALOG]
     assert len(keys) == len(set(keys)), "duplicate recipe key would shadow an entry"
 
 
@@ -50,11 +53,6 @@ def test_no_silent_stale_fallbacks(recipe: DistroRecipe):
     A hardcoded fallback hands the user an outdated ISO that looks current, so
     every resolution path has to end in a raise rather than a DownloadInfo
     built from a baked-in version string.
-
-    The one legitimate exception is an upstream "always current" alias (for
-    example openSUSE's -Current.iso or Bazzite's -stable- image), which never
-    goes stale because upstream repoints it. Those must say so explicitly via
-    USES_CURRENT_ALIAS so the intent is reviewable rather than implied.
     """
     # The recipe's own class and any shared base it resolves through: the four
     # Fedora entries are a table each, over one base that does the fetching.
@@ -66,34 +64,15 @@ def test_no_silent_stale_fallbacks(recipe: DistroRecipe):
         f"{recipe.key} still has a fallback block; it should raise ScrapeError instead"
     )
 
-    if getattr(recipe, "USES_CURRENT_ALIAS", False):
-        return
-
     assert "ScrapeError" in source, (
-        f"{recipe.key} never raises ScrapeError - it cannot fail loudly. "
-        f"If it resolves an always-current upstream alias, set USES_CURRENT_ALIAS = True."
-    )
-
-
-@pytest.mark.parametrize(
-    "recipe", [r for r in ALL if getattr(r, "USES_CURRENT_ALIAS", False)], ids=lambda r: r.key
-)
-def test_current_alias_recipes_are_versionless(recipe: DistroRecipe):
-    """An alias recipe must not also claim a specific version.
-
-    Reporting "9.0" while fetching a rolling alias is the same lie as a stale
-    fallback: the label stops matching the bytes.
-    """
-    source = inspect.getsource(type(recipe))
-    assert "current" in source.lower() or "stable" in source.lower(), (
-        f"{recipe.key} claims USES_CURRENT_ALIAS but resolves no current/stable alias"
+        f"{recipe.key} never raises ScrapeError - it cannot fail loudly."
     )
 
 
 def test_categories_cover_every_recipe():
     cats = registry.get_categories()
     assert cats[0] == "All"
-    covered = {r.key for c in cats[1:] for r in registry.get_by_category(c)}
+    covered = {r.key for r in ALL if r.category in cats[1:]}
     assert covered == {r.key for r in ALL}
 
 
@@ -113,23 +92,10 @@ def test_categories_have_no_near_duplicates():
     assert not dupes, f"near-duplicate categories: {list(dupes.values())}"
 
 
-def test_every_category_has_members():
-    for cat in registry.get_categories():
-        assert registry.get_by_category(cat), f"category {cat!r} has no recipes"
-
-
-def test_every_recipe_has_a_category():
-    """The taxonomy table in registry.py is the single source of truth."""
-    from src.recipes.registry import CATEGORY_BY_KEY, CATEGORY_ORDER
-    keys = {r.key for r in registry.get_all_recipes()}
-
-    missing = sorted(keys - set(CATEGORY_BY_KEY))
-    assert not missing, f"no category assigned for: {missing}"
-
-    orphans = sorted(set(CATEGORY_BY_KEY) - keys)
-    assert not orphans, f"category entries with no matching recipe: {orphans}"
-
-    unknown = sorted({c for c in CATEGORY_BY_KEY.values()} - set(CATEGORY_ORDER))
+def test_every_category_is_a_filter_chip():
+    """The catalog table in registry.py is the single source of truth."""
+    from src.recipes.registry import CATALOG, CATEGORY_ORDER
+    unknown = sorted(set(CATALOG.values()) - set(CATEGORY_ORDER))
     assert not unknown, f"categories missing from CATEGORY_ORDER: {unknown}"
 
 

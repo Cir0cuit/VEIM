@@ -7,24 +7,14 @@ from typing import Callable, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QComboBox, QListView, QHBoxLayout,
-    QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout
+    QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout, QProgressBar
 )
 from PySide6.QtCore import Qt, QSize, QRect, QPoint
-from PySide6.QtGui import QCursor, QPixmap, QFontMetrics
+from PySide6.QtGui import QCursor, QPixmap
 
 from src.core import browser
+from src.core.downloader import DownloadTask
 from src.ui.theme import theme_manager
-
-
-def elide(label: QLabel, text: str, width: int):
-    """Set text on a label, truncating with an ellipsis to fit `width`.
-
-    The old toolbar painted the full drive path into a fixed-width label, so a
-    long path ran underneath the buttons and got visually chopped mid-word.
-    """
-    metrics = QFontMetrics(label.font())
-    label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideMiddle, max(40, width)))
-    label.setToolTip(text)
 
 
 def fmt_eta(seconds: int) -> str:
@@ -45,6 +35,28 @@ def fmt_eta(seconds: int) -> str:
         return f"{mins}m"
     hours, mins = divmod(mins, 60)
     return f"{hours}h {mins:02d}m"
+
+
+def show_progress(bar: QProgressBar, meta: QLabel, task: DownloadTask,
+                  lead: str = "Downloading"):
+    """Put a transfer on a row: fill the bar and state the numbers in `meta`."""
+    done = task.downloaded_bytes / (1024 ** 2)
+    if task.total_bytes > 0:
+        pct = int(task.downloaded_bytes / task.total_bytes * 100)
+        bar.setRange(0, 100)
+        bar.setValue(pct)
+        size = f"{done:.0f} / {task.total_bytes / (1024 ** 2):.0f} MB"
+        bits = [f"{lead} {pct}%".strip(), f"{task.speed_mbps:.1f} MB/s", size,
+                f"{fmt_eta(task.eta_seconds)} left"]
+    else:
+        # Unknown total: an indeterminate bar rather than a fake 0%.
+        bar.setRange(0, 0)
+        size = f"{done:.0f} MB"
+        bits = [lead, f"{task.speed_mbps:.1f} MB/s", size]
+    if task.note:
+        # Between attempts: what is being waited for, not a speed of 0.
+        bits = [task.note, size]
+    meta.setText("  ·  ".join(b for b in bits if b))
 
 
 class _PlainListPopup(QProxyStyle):
@@ -111,7 +123,6 @@ class FlavorCombo(QComboBox):
         # Every entry is shown; a dropdown that scrolls hides options behind
         # an interaction.
         self.setMaxVisibleItems(max(1, self.count()))
-        super().showPopup()
 
         colors = theme_manager.current
         container = self.view().window()
@@ -119,12 +130,17 @@ class FlavorCombo(QComboBox):
         # QListView inside it, which then draws its own border inside the
         # container's - the double box.
         container.setObjectName("comboPopup")
+        # Styled before Qt sizes the popup, so the border is part of the height
+        # it computes. Styled after, the border took 2px from a list sized to
+        # fit its rows exactly, and the list scrolled by a whole row to an empty
+        # line (Linux, where the container has no frame of its own).
         container.setStyleSheet(
             "QFrame#comboPopup {"
             f"  background-color: {colors.bg_card};"
             f"  border: 1px solid {colors.border_focus};"
             "}"
         )
+        super().showPopup()
 
 
 class FlowLayout(QLayout):
@@ -212,11 +228,12 @@ class FlowLayout(QLayout):
 class ElidingLabel(QLabel):
     """A label that truncates to whatever width it is actually given.
 
-    `elide()` has to be told a width up front and measures with the font the
-    label carries at call time - which is the application default, not the
-    larger one the stylesheet applies on polish. The result was a drive path
-    that overflowed its container and was clipped mid-glyph. Re-eliding on
-    resize uses the real width and the real font instead of guessing both.
+    It replaced a helper that elided once, at a width given up front, measuring
+    with the font the label carried at call time - which is the application
+    default, not the larger one the stylesheet applies on polish. The result
+    was a drive path that overflowed its container and was clipped mid-glyph.
+    Re-eliding on resize uses the real width and the real font instead of
+    guessing both.
     """
 
     def __init__(self, text: str = "", mode=Qt.TextElideMode.ElideMiddle, parent=None):
@@ -273,9 +290,7 @@ class IconChip(QLabel):
         Only a logo that is almost entirely dark gets the plate - see
         IconManager.needs_light_backdrop.
         """
-        self.setObjectName("iconChipPlate" if needs_plate else "iconChip")
-        self.style().unpolish(self)
-        self.style().polish(self)
+        restyle(self, "iconChipPlate" if needs_plate else "iconChip")
 
     def set_icon(self, pixmap: Optional[QPixmap]):
         if pixmap is None or pixmap.isNull():
@@ -315,10 +330,7 @@ class Pill(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
 
     def set_tone(self, tone: str):
-        self.setObjectName(self.TONES.get(tone, "statusPill"))
-        # Re-polish so the new objectName takes effect on an existing widget.
-        self.style().unpolish(self)
-        self.style().polish(self)
+        restyle(self, self.TONES.get(tone, "statusPill"))
 
 
 class CapacityBar(QWidget):
@@ -350,9 +362,7 @@ class CapacityBar(QWidget):
         self._reserved_ratio = max(0.0, min(1.0 - self._ratio, reserved))
         # Near-full drives read as a warning rather than "more blue is better".
         committed = self._ratio + self._reserved_ratio
-        self._fill.setObjectName("capacityFillWarn" if committed > 0.9 else "capacityFill")
-        self._fill.style().unpolish(self._fill)
-        self._fill.style().polish(self._fill)
+        restyle(self._fill, "capacityFillWarn" if committed > 0.9 else "capacityFill")
         self._reserved.setVisible(self._reserved_ratio > 0)
         self._relayout()
 
@@ -408,19 +418,23 @@ def open_link(url: str, parent=None) -> bool:
     return False
 
 
-def set_button_kind(btn: QPushButton, kind: str):
-    """Restyle a button that already exists.
+def restyle(widget: QWidget, name: str):
+    """Give a widget that already exists a new objectName, and its styling.
 
     Re-polishing is the part that matters: a widget the stylesheet has already
     seen keeps its old appearance until the style is told to look at the new
     objectName.
     """
-    name = BUTTON_OBJECT_NAMES.get(kind, "ghostBtn")
-    if btn.objectName() == name:
+    if widget.objectName() == name:
         return
-    btn.setObjectName(name)
-    btn.style().unpolish(btn)
-    btn.style().polish(btn)
+    widget.setObjectName(name)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+
+
+def set_button_kind(btn: QPushButton, kind: str):
+    """Restyle a button that already exists."""
+    restyle(btn, BUTTON_OBJECT_NAMES.get(kind, "ghostBtn"))
 
 
 class EmptyState(QFrame):

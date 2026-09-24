@@ -11,7 +11,8 @@ Fix the recipe with key `$0`. The rules are in CONTRIBUTING.md, "Adding a distri
    - newest release by numeric sort over the whole listing, never the first link or a pinned folder;
    - never a label ("latest", "current", "stable") as the version;
    - on a network error raise `ScrapeError(self.name, reason)`; no fallback to an older release or a hardcoded URL;
-   - supply `sha256` when the project publishes one.
+   - supply `sha256` when the project publishes one;
+   - use the helpers in `src/core/recipe_base.py` (`hrefs`, `table_rows`, `version_key`, `github_latest`, `sourceforge_rss`) rather than a local copy.
 4. If the image's filename changed, update its `_Rule` in `src/core/iso_identity.py` (exact, whole-name pattern).
 5. Add an offline regression to `tests/test_stale_recipes.py`: capture the shape of the page that broke the recipe and serve it with `_with(monkeypatch, Recipe(), pages)`; `_listing`, `_jsontable` and `_Resp` build the pages.
 6. Verify: `python -m pytest -q`, then the command from step 1.

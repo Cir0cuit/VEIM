@@ -78,7 +78,7 @@ def capture():
         # 2. Capture Empty State with 512x512 High-DPI iso_disc.png
         empty_dir = tempfile.mkdtemp(prefix="veim_empty_")
         empty_win = VEIMMainWindow()
-        empty_view = DashboardView(drive_path=empty_dir, on_change_drive=lambda: None)
+        empty_view = DashboardView(drive_path=empty_dir)
         empty_win.setCentralWidget(empty_view)
         empty_win.resize(960, 720)
         empty_win.show()
@@ -96,7 +96,7 @@ def capture():
         with open(arch_iso, "wb") as f: f.write(b"iso")
 
         dash_window = VEIMMainWindow()
-        dash_view = DashboardView(drive_path=temp_dir, on_change_drive=lambda: None)
+        dash_view = DashboardView(drive_path=temp_dir)
         dash_window.setCentralWidget(dash_view)
 
         dash_view.inventory_mgr.add_or_update(

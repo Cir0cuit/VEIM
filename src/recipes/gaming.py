@@ -1,31 +1,19 @@
 import re
 from email.utils import parsedate_to_datetime
-from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs
 from src.core.logger import log
 
 class BazziteRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="bazzite",
-            name="Bazzite",
-            category="Gaming & Performance",
-            description="SteamOS alternative built on Fedora Atomic, tailored for PC gaming and handhelds."
-        )
+    key = "bazzite"
+    name = "Bazzite"
+    description = "SteamOS alternative built on Fedora Atomic, tailored for PC gaming and handhelds."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("desktop-kde", "Desktop Edition (KDE Plasma)", "Flagship desktop gaming experience with KDE Plasma 6."),
-            FlavorInfo("desktop-gnome", "Desktop Edition (GNOME)", "Modern GNOME desktop experience tailored for PC gaming."),
-            FlavorInfo("deck-kde", "Handheld Edition (Steam Deck / Ally)", "Boots directly into Steam Big Picture / Game Mode."),
-            FlavorInfo("desktop-nvidia", "NVIDIA Desktop (KDE Plasma)", "Pre-packaged with proprietary NVIDIA display drivers.")
-        ]
-
-    # Bazzite publishes rolling "-stable-" images: the filename never changes
-    # and upstream repoints it at each build. The URL is therefore fixed; the
-    # version is read from the file itself, below.
-    USES_CURRENT_ALIAS = True
+    FLAVORS = [
+        FlavorInfo("desktop-kde", "Desktop Edition (KDE Plasma)"),
+        FlavorInfo("desktop-gnome", "Desktop Edition (GNOME)"),
+        FlavorInfo("deck-kde", "Handheld Edition (Steam Deck / Ally)"),
+        FlavorInfo("desktop-nvidia", "NVIDIA Desktop (KDE Plasma)")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         mapping = {
@@ -63,59 +51,39 @@ class BazziteRecipe(DistroRecipe):
 
 
 class GarudaRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="garuda",
-            name="Garuda Linux",
-            category="Gaming & Performance",
-            description="Performance-focused Arch-based distribution with automated BTRFS snapshots."
-        )
+    key = "garuda"
+    name = "Garuda Linux"
+    description = "Performance-focused Arch-based distribution with automated BTRFS snapshots."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("dr460nized", "Dr460nized (KDE)", "Dark, neon, dragon-themed KDE Plasma desktop."),
-            FlavorInfo("dr460nized-gaming", "Dr460nized Gaming Edition", "Pre-loaded with Wine, Proton, Lutris, and emulator suites."),
-            FlavorInfo("gnome", "GNOME Edition", "Clean and gesture-friendly modern GNOME desktop."),
-            FlavorInfo("kde-lite", "KDE Lite", "Stripped-down, ultra-fast minimal KDE Plasma edition."),
-            FlavorInfo("xfce", "Xfce Edition", "Lightweight, responsive and classic desktop environment."),
-            FlavorInfo("cinnamon", "Cinnamon Edition", "Traditional, elegant desktop layout."),
-            FlavorInfo("mokka", "Mokka (KDE)", "Catppuccin-themed KDE Plasma desktop."),
-            FlavorInfo("hyprland", "Hyprland Edition", "Animated tiling Wayland compositor."),
-            FlavorInfo("sway", "Sway Edition", "Tiling Wayland compositor, compatible with i3."),
-            FlavorInfo("i3", "i3 Edition", "Keyboard-driven tiling window manager."),
-        ]
+    FLAVORS = [
+        FlavorInfo("dr460nized", "Dr460nized (KDE)"),
+        FlavorInfo("dr460nized-gaming", "Dr460nized Gaming Edition"),
+        FlavorInfo("gnome", "GNOME Edition"),
+        FlavorInfo("kde-lite", "KDE Lite"),
+        FlavorInfo("xfce", "Xfce Edition"),
+        FlavorInfo("cinnamon", "Cinnamon Edition"),
+        FlavorInfo("mokka", "Mokka (KDE)"),
+        FlavorInfo("hyprland", "Hyprland Edition"),
+        FlavorInfo("sway", "Sway Edition"),
+        FlavorInfo("i3", "i3 Edition"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
         target = flavor_id.lower()
-        folder_map = {
-            "dr460nized": "dr460nized",
-            "dr460nized-gaming": "dr460nized-gaming",
-            "gnome": "gnome",
-            "kde-lite": "kde-lite",
-            "xfce": "xfce",
-            "cinnamon": "cinnamon",
-            "mokka": "mokka",
-            "hyprland": "hyprland",
-            "sway": "sway",
-            "i3": "i3",
-        }
-        if target not in folder_map:
+        if target not in {f.id for f in self.FLAVORS}:
             raise ScrapeError(self.name, f"unknown Garuda edition {flavor_id!r}")
-        sub = folder_map[target]
-        base_url = f"https://iso.builds.garudalinux.org/iso/garuda/{sub}/"
+        base_url = f"https://iso.builds.garudalinux.org/iso/garuda/{target}/"
 
         try:
             r = session.get(base_url, timeout=8)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                dates = [a.get("href", "").strip("/") for a in soup.find_all("a") if a.get("href", "").strip("/").isdigit()]
+                dates = [h.strip("/") for h in hrefs(r.text) if h.strip("/").isdigit()]
                 if dates:
                     latest_d = sorted(dates)[-1]
                     r_sub = session.get(f"{base_url}{latest_d}/", timeout=8)
                     if r_sub.status_code == 200:
-                        soup_sub = BeautifulSoup(r_sub.text, "html.parser")
-                        isos = [a.get("href", "") for a in soup_sub.find_all("a") if a.get("href", "").endswith(".iso")]
+                        isos = [h for h in hrefs(r_sub.text) if h.endswith(".iso")]
                         if isos:
                             iso_name = isos[0]
                             dl_url = f"{base_url}{latest_d}/{iso_name}"
@@ -123,23 +91,18 @@ class GarudaRecipe(DistroRecipe):
         except Exception as e:
             log.warning(f"[Garuda] Scrape error: {e}")
 
-        raise ScrapeError(self.name, f"no current {sub} ISO listed in the Garuda release tree")
+        raise ScrapeError(self.name, f"no current {target} ISO listed in the Garuda release tree")
 
 
 class CachyOSRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="cachyos",
-            name="CachyOS",
-            category="Gaming & Performance",
-            description="Blazing fast Arch-based distribution with x86-64-v3/v4 optimized kernels and packages."
-        )
+    key = "cachyos"
+    name = "CachyOS"
+    description = "Blazing fast Arch-based distribution with x86-64-v3/v4 optimized kernels and packages."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("desktop", "Desktop Edition", "Universal Calamares installer with KDE, GNOME, XFCE, and Hyprland."),
-            FlavorInfo("handheld", "Handheld Edition", "Optimized for Steam Deck, ROG Ally, and portable gaming devices.")
-        ]
+    FLAVORS = [
+        FlavorInfo("desktop", "Desktop Edition"),
+        FlavorInfo("handheld", "Handheld Edition")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -149,13 +112,11 @@ class CachyOSRecipe(DistroRecipe):
         try:
             r = session.get(base_url, timeout=8)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                subfolders = [a.get("href", "").strip("/") for a in soup.find_all("a") if re.match(r"^\d+/?$", a.get("href", ""))]
+                subfolders = [h.strip("/") for h in hrefs(r.text) if re.match(r"^\d+/?$", h)]
                 if subfolders:
                     latest = sorted(subfolders)[-1]
                     r_sub = session.get(f"{base_url}{latest}/", timeout=8)
-                    soup_sub = BeautifulSoup(r_sub.text, "html.parser")
-                    isos = [a.get("href", "") for a in soup_sub.find_all("a") if a.get("href", "").endswith(".iso")]
+                    isos = [h for h in hrefs(r_sub.text) if h.endswith(".iso")]
                     if isos:
                         iso_name = isos[0]
                         dl_url = f"{base_url}{latest}/{iso_name}"
@@ -167,22 +128,17 @@ class CachyOSRecipe(DistroRecipe):
 
 
 class NobaraRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="nobara",
-            name="Nobara Project",
-            category="Gaming & Performance",
-            description="Fedora with the gaming, codec and driver fixes applied out of the box.",
-        )
+    key = "nobara"
+    name = "Nobara Project"
+    description = "Fedora with the gaming, codec and driver fixes applied out of the box."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("official", "Official (GNOME)", "The maintainer's recommended desktop build."),
-            FlavorInfo("kde", "KDE Plasma", "Plasma desktop edition."),
-            FlavorInfo("gnome", "GNOME", "Stock GNOME edition."),
-            FlavorInfo("steam-htpc", "Steam HTPC", "Boots into Steam Big Picture for a TV."),
-            FlavorInfo("steam-handheld", "Steam Handheld", "Tuned for handheld gaming PCs."),
-        ]
+    FLAVORS = [
+        FlavorInfo("official", "Official (GNOME)"),
+        FlavorInfo("kde", "KDE Plasma"),
+        FlavorInfo("gnome", "GNOME"),
+        FlavorInfo("steam-htpc", "Steam HTPC"),
+        FlavorInfo("steam-handheld", "Steam Handheld"),
+    ]
 
     _EDITION = {
         "official": "Official",
@@ -221,22 +177,17 @@ class NobaraRecipe(DistroRecipe):
 
 
 class PikaOSRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="pikaos",
-            name="PikaOS",
-            category="Gaming & Performance",
-            description="Debian-based gaming distribution with a performance-tuned kernel.",
-        )
+    key = "pikaos"
+    name = "PikaOS"
+    description = "Debian-based gaming distribution with a performance-tuned kernel."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("kde", "KDE Plasma", "Plasma desktop."),
-            FlavorInfo("gnome", "GNOME", "GNOME desktop."),
-            FlavorInfo("hyprland", "Hyprland", "Tiling Wayland compositor."),
-            FlavorInfo("nvidia-kde", "KDE Plasma (NVIDIA)", "Plasma with NVIDIA drivers preinstalled."),
-            FlavorInfo("nvidia-gnome", "GNOME (NVIDIA)", "GNOME with NVIDIA drivers preinstalled."),
-        ]
+    FLAVORS = [
+        FlavorInfo("kde", "KDE Plasma"),
+        FlavorInfo("gnome", "GNOME"),
+        FlavorInfo("hyprland", "Hyprland"),
+        FlavorInfo("nvidia-kde", "KDE Plasma (NVIDIA)"),
+        FlavorInfo("nvidia-gnome", "GNOME (NVIDIA)"),
+    ]
 
     _EDITION = {
         "kde": "KDE",

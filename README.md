@@ -384,9 +384,9 @@ them.
 
 **Something else went wrong.** The log is `veim.log` in
 `%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or
-`~/Library/Application Support/VEIM` (next to `main.py` when running from
-source). It says what VEIM asked for, what it got back, and why it stopped.
-Attach it to an [issue](https://github.com/Cir0cuit/VEIM/issues).
+`~/Library/Application Support/VEIM` (the directory you started it from, when
+running from source). It says what VEIM asked for, what it got back, and why
+it stopped. Attach it to an [issue](https://github.com/Cir0cuit/VEIM/issues).
 
 ## Themes
 

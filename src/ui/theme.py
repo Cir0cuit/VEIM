@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Dict
 from PySide6.QtWidgets import QPushButton, QMenu
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor, QAction
+from PySide6.QtGui import QCursor, QActionGroup
 
 CHEVRON_DOWN_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "assets", "icons", "chevron_down.png")
@@ -231,15 +231,12 @@ THEMES: Dict[str, ThemeColors] = {
     ),
 }
 
-DARK_THEME = THEMES["Dark Modern"]
-LIGHT_THEME = THEMES["Clean Light"]
-
 def generate_stylesheet(c: ThemeColors) -> str:
     return f"""
     * {{
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
     }}
-    QMainWindow, QDialog, QWidget#centralWidget {{
+    QMainWindow, QDialog {{
         background-color: {c.bg_main};
         color: {c.text_primary};
     }}
@@ -314,27 +311,9 @@ def generate_stylesheet(c: ThemeColors) -> str:
         color: {c.accent_text};
         border: none;
         font-weight: 700;
-        font-size: 13px;
-        padding: 8px 16px;
-        border-radius: 8px;
     }}
     QPushButton#primaryBtn:hover {{
         background-color: {c.accent_hover};
-        color: {c.accent_text};
-    }}
-    QPushButton#dangerBtn {{
-        background-color: transparent;
-        color: {c.danger};
-        border: 1px solid {c.border};
-        font-weight: 600;
-        font-size: 13px;
-        padding: 6px 14px;
-        border-radius: 8px;
-    }}
-    QPushButton#dangerBtn:hover {{
-        background-color: {c.danger};
-        color: #ffffff;
-        border-color: {c.danger};
     }}
     QMenu {{
         background-color: {c.bg_card};
@@ -358,19 +337,14 @@ def generate_stylesheet(c: ThemeColors) -> str:
         background-color: {c.border};
         margin: 4px 8px;
     }}
+    /* The background is restated so the button keeps its colour while its
+       menu is open, which Qt draws as :pressed. */
     QPushButton#themeBtn {{
         background-color: {c.bg_card};
-        color: {c.text_primary};
-        border: 1px solid {c.border};
-        border-radius: 8px;
         padding: 6px 14px;
-        font-size: 13px;
-        font-weight: 600;
-        text-align: center;
     }}
     QPushButton#themeBtn:hover {{
         background-color: {c.bg_card_hover};
-        border-color: {c.border_focus};
     }}
     QPushButton#themeBtn::menu-indicator {{
         subcontrol-origin: padding;
@@ -471,29 +445,6 @@ def _component_stylesheet(c: ThemeColors) -> str:
         letter-spacing: 1.2px;
     }}
 
-    /* ---------- Update banner ---------- */
-    QFrame#updateBanner {{
-        background-color: {c.accent_soft};
-        border: none;
-        border-bottom: 1px solid {c.border};
-    }}
-    QLabel#updateBannerText {{
-        color: {c.text_primary};
-        font-size: 13px;
-        font-weight: 600;
-    }}
-    QPushButton#updateBannerDismiss {{
-        background-color: transparent;
-        color: {c.text_muted};
-        border: none;
-        padding: 4px 8px;
-        font-size: 15px;
-        font-weight: 700;
-    }}
-    QPushButton#updateBannerDismiss:hover {{
-        color: {c.text_primary};
-    }}
-
     /* ---------- Sidebar navigation ---------- */
     QPushButton#navItem {{
         background-color: transparent;
@@ -583,14 +534,16 @@ def _component_stylesheet(c: ThemeColors) -> str:
     }}
 
     /* ---------- Buttons ---------- */
-    QPushButton#ghostBtn {{
+    QPushButton#ghostBtn, QPushButton#quietDanger {{
         background-color: transparent;
-        color: {c.text_secondary};
         border: 1px solid {c.border};
         border-radius: 8px;
         padding: 7px 14px;
         font-size: 12px;
         font-weight: 600;
+    }}
+    QPushButton#ghostBtn {{
+        color: {c.text_secondary};
     }}
     QPushButton#ghostBtn:hover {{
         background-color: {c.row_hover};
@@ -602,13 +555,7 @@ def _component_stylesheet(c: ThemeColors) -> str:
         border-color: {c.border};
     }}
     QPushButton#quietDanger {{
-        background-color: transparent;
         color: {c.danger};
-        border: 1px solid {c.border};
-        border-radius: 8px;
-        padding: 7px 14px;
-        font-size: 12px;
-        font-weight: 600;
     }}
     QPushButton#quietDanger:hover {{
         background-color: {c.danger};
@@ -635,29 +582,23 @@ def _component_stylesheet(c: ThemeColors) -> str:
         border-color: {c.accent};
         color: {c.accent_text};
     }}
-    QLabel#statusPill {{
-        background-color: {c.accent_soft};
-        color: {c.text_secondary};
+    QLabel#statusPill, QLabel#okPill, QLabel#warnPill {{
         border-radius: 10px;
         padding: 3px 10px;
         font-size: 11px;
         font-weight: 700;
+    }}
+    QLabel#statusPill {{
+        background-color: {c.accent_soft};
+        color: {c.text_secondary};
     }}
     QLabel#okPill {{
         background-color: {c.success};
         color: #06231a;
-        border-radius: 10px;
-        padding: 3px 10px;
-        font-size: 11px;
-        font-weight: 700;
     }}
     QLabel#warnPill {{
         background-color: {c.warning};
         color: #2b1a02;
-        border-radius: 10px;
-        padding: 3px 10px;
-        font-size: 11px;
-        font-weight: 700;
     }}
     QLabel#errorText {{
         color: {c.danger};
@@ -666,25 +607,22 @@ def _component_stylesheet(c: ThemeColors) -> str:
     }}
 
     /* ---------- Drive capacity ---------- */
-    QFrame#capacityTrack {{
-        background-color: {c.bg_input};
+    QFrame#capacityTrack, QFrame#capacityFill, QFrame#capacityReserved,
+    QFrame#capacityFillWarn {{
         border: none;
         border-radius: 3px;
+    }}
+    QFrame#capacityTrack {{
+        background-color: {c.bg_input};
     }}
     QFrame#capacityFill {{
         background-color: {c.accent};
-        border: none;
-        border-radius: 3px;
     }}
     QFrame#capacityReserved {{
         background-color: {c.text_muted};
-        border: none;
-        border-radius: 3px;
     }}
     QFrame#capacityFillWarn {{
         background-color: {c.warning};
-        border: none;
-        border-radius: 3px;
     }}
 
     /* ---------- Empty state ---------- */
@@ -733,10 +671,6 @@ class ThemeManager:
                     val = f.read().strip()
                     if val in THEMES or val == "System":
                         self.selected_theme = val
-                    elif val.title() == "Dark":
-                        self.selected_theme = "Dark Modern"
-                    elif val.title() == "Light":
-                        self.selected_theme = "Clean Light"
             except Exception:
                 pass
 
@@ -753,24 +687,6 @@ class ThemeManager:
             self.current = self._resolve_theme(theme_name)
             self._save_pref()
             self._notify()
-
-    def set_theme_mode(self, mode: str):
-        mapping = {
-            "Dark": "Dark Modern",
-            "Light": "Clean Light",
-            "System": "System"
-        }
-        self.set_theme(mapping.get(mode, mode))
-
-    @property
-    def mode(self) -> str:
-        return self.selected_theme
-
-    def toggle_theme(self):
-        if self.current.mode == "Dark":
-            self.set_theme("Clean Light")
-        else:
-            self.set_theme("Dark Modern")
 
     def add_listener(self, cb: Callable[[ThemeColors], None]):
         self.listeners.append(cb)
@@ -793,37 +709,18 @@ class ThemeButton(QPushButton):
         self.setFixedHeight(34)
         self.setFixedWidth(96)
         self._build_menu()
-        theme_manager.add_listener(self._on_theme_updated)
 
     def _build_menu(self):
-        self.menu = QMenu(self)
-        self.menu.setObjectName("themeMenu")
-        self.actions = {}
-
-        for key in THEMES:
-            act = QAction(key, self)
+        menu = QMenu(self)
+        menu.setObjectName("themeMenu")
+        # Exclusive by default: checking one theme unchecks the rest.
+        group = QActionGroup(menu)
+        for key in [*THEMES, "System"]:
+            if key == "System":
+                menu.addSeparator()
+            act = menu.addAction("System Match" if key == "System" else key)
             act.setCheckable(True)
-            act.triggered.connect(lambda checked=False, k=key: theme_manager.set_theme(k))
-            self.menu.addAction(act)
-            self.actions[key] = act
-
-        self.menu.addSeparator()
-
-        self.action_system = QAction("System Match", self)
-        self.action_system.setCheckable(True)
-        self.action_system.triggered.connect(lambda: theme_manager.set_theme("System"))
-        self.menu.addAction(self.action_system)
-        self.actions["System"] = self.action_system
-
-        self._update_checked_state()
-        self.setMenu(self.menu)
-
-    def _update_checked_state(self):
-        current_theme = theme_manager.selected_theme
-        for key, act in self.actions.items():
-            act.setChecked(key == current_theme)
-
-    def _on_theme_updated(self, colors: ThemeColors):
-        self._update_checked_state()
-
-ThemeSelector = ThemeButton
+            act.setChecked(key == theme_manager.selected_theme)
+            act.triggered.connect(lambda _=False, k=key: theme_manager.set_theme(k))
+            group.addAction(act)
+        self.setMenu(menu)

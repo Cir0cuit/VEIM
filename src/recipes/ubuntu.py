@@ -1,33 +1,26 @@
 import re
-from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
 from src.core.logger import log
 
 class UbuntuRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="ubuntu",
-            name="Ubuntu",
-            category="Popular & Desktop",
-            description="The world's most widely used desktop Linux distribution."
-        )
+    key = "ubuntu"
+    name = "Ubuntu"
+    description = "The world's most widely used desktop Linux distribution."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("desktop", "Ubuntu Desktop", "Standard flagship GNOME desktop environment."),
-            FlavorInfo("server", "Ubuntu Server", "Headless, enterprise-grade server installation."),
-            FlavorInfo("kubuntu", "Kubuntu", "KDE Plasma edition of Ubuntu."),
-            FlavorInfo("xubuntu", "Xubuntu", "Fast and lightweight Xfce desktop."),
-            FlavorInfo("lubuntu", "Lubuntu", "Extremely lightweight LXQt desktop."),
-            FlavorInfo("mate", "Ubuntu MATE", "Classic, comfortable MATE desktop."),
-            FlavorInfo("budgie", "Ubuntu Budgie", "Refined and elegant Budgie desktop."),
-            FlavorInfo("cinnamon", "Ubuntu Cinnamon", "Traditional Cinnamon desktop."),
-            FlavorInfo("unity", "Ubuntu Unity", "The Unity desktop Ubuntu shipped until 17.04."),
-            FlavorInfo("studio", "Ubuntu Studio", "For audio, video and graphics production."),
-            FlavorInfo("edubuntu", "Edubuntu", "Ubuntu with education software, for schools and homes."),
-            FlavorInfo("kylin", "Ubuntu Kylin", "The official flavour for Chinese-language users."),
-        ]
+    FLAVORS = [
+        FlavorInfo("desktop", "Ubuntu Desktop"),
+        FlavorInfo("server", "Ubuntu Server"),
+        FlavorInfo("kubuntu", "Kubuntu"),
+        FlavorInfo("xubuntu", "Xubuntu"),
+        FlavorInfo("lubuntu", "Lubuntu"),
+        FlavorInfo("mate", "Ubuntu MATE"),
+        FlavorInfo("budgie", "Ubuntu Budgie"),
+        FlavorInfo("cinnamon", "Ubuntu Cinnamon"),
+        FlavorInfo("unity", "Ubuntu Unity"),
+        FlavorInfo("studio", "Ubuntu Studio"),
+        FlavorInfo("edubuntu", "Edubuntu"),
+        FlavorInfo("kylin", "Ubuntu Kylin"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -54,21 +47,14 @@ class UbuntuRecipe(DistroRecipe):
         try:
             r = session.get(base_url, timeout=10)
             r.raise_for_status()
-            soup = BeautifulSoup(r.text, "html.parser")
-            
+
             versions = []
-            for a in soup.find_all("a", href=True):
-                href = a["href"].strip("/")
+            for href in hrefs(r.text):
+                href = href.strip("/")
                 if href and href[0].isdigit() and re.match(r'^\d+\.\d+(\.\d+)?$', href):
                     versions.append(href)
 
-            def ver_key(s):
-                try:
-                    return [int(u) for u in s.split(".") if u.isdigit()]
-                except Exception:
-                    return [0]
-
-            versions.sort(key=ver_key, reverse=True)
+            versions.sort(key=version_key, reverse=True)
             
             for ver in versions[:8]:
                 paths_to_test = [f"{base_url}{ver}/", f"{base_url}{ver}/release/"]
@@ -77,9 +63,7 @@ class UbuntuRecipe(DistroRecipe):
                         r2 = session.get(p, timeout=6)
                         if r2.status_code != 200:
                             continue
-                        soup2 = BeautifulSoup(r2.text, "html.parser")
-                        for a2 in soup2.find_all("a", href=True):
-                            href2 = a2["href"]
+                        for href2 in hrefs(r2.text):
                             if not href2.endswith(".iso") or "beta" in href2.lower():
                                 continue
                             

@@ -1,3 +1,4 @@
+import contextlib
 import os
 import time
 import hashlib
@@ -247,13 +248,12 @@ class RateMeter:
 
 
 class DownloadTask:
-    def __init__(self, url: str, dest_path: str, expected_size: int = 0,
+    def __init__(self, url: str, dest_path: str,
                  session: Optional[requests.Session] = None, sha256: str = "",
                  archive: str = ""):
         self.url = url
         self.dest_path = dest_path
         self.part_path = dest_path + ".part"
-        self.expected_size = expected_size
         # Published checksum, verified before .part is promoted to .iso.
         self.sha256 = (sha256 or "").strip().lower()
         # "zip" when the fetched file is an archive to unpack, "" for a raw ISO.
@@ -261,7 +261,6 @@ class DownloadTask:
         self.session = session or requests.Session()
         
         self.is_cancelled = False
-        self.is_completed = False
         # What the row shows in place of the speed while the transfer is
         # between attempts: "Connection lost, retrying in 5 s (2 of 4)".
         self.note = ""
@@ -270,7 +269,6 @@ class DownloadTask:
         self.speed_mbps = 0.0
         self.eta_seconds = 0
         self._meter = RateMeter()
-        self._thread: Optional[threading.Thread] = None
 
     def cancel(self):
         self.is_cancelled = True
@@ -278,12 +276,11 @@ class DownloadTask:
 
     def start_async(self, progress_callback: Optional[Callable[['DownloadTask'], None]] = None,
                     completion_callback: Optional[Callable[[bool, str], None]] = None):
-        self._thread = threading.Thread(
+        threading.Thread(
             target=self._run,
             args=(progress_callback, completion_callback),
             daemon=True
-        )
-        self._thread.start()
+        ).start()
 
     def _run(self, progress_cb, completion_cb):
         try:
@@ -387,8 +384,6 @@ class DownloadTask:
                         self.total_bytes = self.downloaded_bytes + int(content_len)
                     else:
                         self.total_bytes = int(content_len)
-                elif not self.total_bytes:
-                    self.total_bytes = self.expected_size
 
                 self._check_space(dest_dir)
 
@@ -401,11 +396,8 @@ class DownloadTask:
                     for chunk in resp.iter_content(chunk_size=chunk_size):
                         if self.is_cancelled:
                             f.close()
-                            if os.path.exists(self.part_path):
-                                try:
-                                    os.remove(self.part_path)
-                                except Exception:
-                                    pass
+                            with contextlib.suppress(OSError):
+                                os.remove(self.part_path)
                             if completion_cb:
                                 completion_cb(False, "Cancelled by user")
                             return
@@ -437,10 +429,8 @@ class DownloadTask:
                     log.info(f"Verifying SHA-256 for {os.path.basename(self.dest_path)}...")
                     actual = sha256_of(self.part_path)
                     if actual != self.sha256:
-                        try:
+                        with contextlib.suppress(OSError):
                             os.remove(self.part_path)
-                        except Exception:
-                            pass
                         raise ChecksumError(
                             "Downloaded file failed its SHA-256 check "
                             f"(expected {self.sha256[:16]}..., got {actual[:16]}...). "
@@ -448,19 +438,17 @@ class DownloadTask:
                         )
                     log.info("SHA-256 verified.")
 
-                if os.path.exists(self.dest_path):
-                    try:
-                        os.remove(self.dest_path)
-                    except Exception:
-                        pass
-
                 if self.archive == "zip":
                     log.info(f"Extracting ISO from archive for {os.path.basename(self.dest_path)}...")
+                    # Replace the old file, as os.replace() does for a raw ISO,
+                    # rather than write into it: a read-only one cannot be
+                    # opened for writing, and a symlink would be written through.
+                    with contextlib.suppress(OSError):
+                        os.remove(self.dest_path)
                     extract_iso_from_zip(self.part_path, self.dest_path)
                     os.remove(self.part_path)
                 else:
                     os.replace(self.part_path, self.dest_path)
-                self.is_completed = True
                 log.info(f"Download successfully finished: {self.dest_path}")
 
                 if progress_cb:
@@ -485,11 +473,9 @@ class DownloadTask:
                             f"{max_retries + 1} without progress): {e}")
                 if retry_count > max_retries or self.is_cancelled:
                     log.error(f"Download failed for {self.url} after {max_retries} retries: {e}")
-                    if self.is_cancelled and os.path.exists(self.part_path):
-                        try:
+                    if self.is_cancelled:
+                        with contextlib.suppress(OSError):
                             os.remove(self.part_path)
-                        except Exception:
-                            pass
                     if completion_cb:
                         completion_cb(False, describe_failure(e, self.url))
                     return
@@ -497,11 +483,8 @@ class DownloadTask:
                 mode = "ab"
                 if not self._wait_before_retry(RETRY_DELAYS_SECONDS[retry_count - 1],
                                                retry_count, max_retries, progress_cb):
-                    if os.path.exists(self.part_path):
-                        try:
-                            os.remove(self.part_path)
-                        except Exception:
-                            pass
+                    with contextlib.suppress(OSError):
+                        os.remove(self.part_path)
                     if completion_cb:
                         completion_cb(False, "Cancelled by user")
                     return

@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Any
 from src.core.iso_identity import IsoIdentity, identify
 from src.core.logger import log
@@ -21,39 +21,27 @@ MOVED_FLAVORS = {
 EXCLUDED_KEY = "_excluded"
 
 
+@dataclass(eq=False)
 class InventoryItem:
-    def __init__(self, key: str, flavor_id: str, display_name: str, version: str, filename: str,
-                 size_bytes: int = 0, sha256: str = "", url: str = "", installed_at: str = ""):
-        self.key = key
-        self.flavor_id = flavor_id
-        self.display_name = display_name
-        self.version = version
-        self.filename = filename
-        self.size_bytes = size_bytes
-        self.sha256 = sha256
-        self.url = url
-        self.installed_at = installed_at or time.strftime("%Y-%m-%d %H:%M:%S")
+    key: str
+    flavor_id: str
+    display_name: str
+    version: str
+    filename: str
+    size_bytes: int = 0
+    sha256: str = ""
+    url: str = ""
+    installed_at: str = ""
+
+    def __post_init__(self):
+        self.installed_at = self.installed_at or time.strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def size_mb(self) -> float:
         return round(self.size_bytes / (1024 * 1024), 1)
 
-    @property
-    def size_gb(self) -> float:
-        return round(self.size_bytes / (1024 * 1024 * 1024), 2)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "key": self.key,
-            "flavor_id": self.flavor_id,
-            "display_name": self.display_name,
-            "version": self.version,
-            "filename": self.filename,
-            "size_bytes": self.size_bytes,
-            "sha256": self.sha256,
-            "url": self.url,
-            "installed_at": self.installed_at
-        }
+    # The fields, in order, are the record's keys in the inventory file.
+    to_dict = asdict
 
     @staticmethod
     def from_dict(d: Dict[str, Any]) -> 'InventoryItem':
@@ -85,7 +73,6 @@ class InventoryManager:
         self.ventoy_root = ventoy_root
         self.managed_dir = os.path.join(ventoy_root, "Managed_ISOs")
         self.inventory_file = os.path.join(self.managed_dir, "veim_inventory.json")
-        self.legacy_inventory_file = os.path.join(self.managed_dir, "vom_inventory.json")
         self.ventoy_config = VentoyConfig(ventoy_root)
         self.items: Dict[str, InventoryItem] = {}  # keyed by f"{key}::{flavor_id}"
         # Filenames the user has said to leave alone, so they are not offered
@@ -110,11 +97,10 @@ class InventoryManager:
     def load(self):
         self.items = {}
         self.excluded = set()
-        path_to_read = self.inventory_file if os.path.exists(self.inventory_file) else self.legacy_inventory_file
-        if not os.path.exists(path_to_read):
+        if not os.path.exists(self.inventory_file):
             return
         try:
-            with open(path_to_read, "r", encoding="utf-8") as f:
+            with open(self.inventory_file, "r", encoding="utf-8") as f:
                 raw = json.load(f)
             for k, val in raw.items():
                 if k == EXCLUDED_KEY:
@@ -138,7 +124,7 @@ class InventoryManager:
                 self.items[self._free_key(item.key, item.flavor_id, item.filename)] = item
             log.info(f"Loaded {len(self.items)} installed items from inventory.")
         except Exception as e:
-            log.error(f"Error loading inventory from {path_to_read}: {e}")
+            log.error(f"Error loading inventory from {self.inventory_file}: {e}")
 
     @staticmethod
     def _still_trackable(item: InventoryItem) -> bool:
@@ -297,9 +283,6 @@ class InventoryManager:
     def get_item(self, key: str, flavor_id: str = "") -> Optional[InventoryItem]:
         ck = self._composite_key(key, flavor_id)
         return self.items.get(ck)
-
-    def is_installed(self, key: str, flavor_id: str = "") -> bool:
-        return self.get_item(key, flavor_id) is not None
 
     def _purge_other_entries_for_file(self, filename: str, keep_ck: str):
         """Drop stale entries that point at `filename` under a different key.

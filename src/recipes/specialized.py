@@ -1,52 +1,34 @@
 import re
-from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
 from src.core.logger import log
 
 
 class ArtixRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="artix",
-            name="Artix Linux",
-            category="Rolling Release",
-            description="Rolling-release Arch derivative with OpenRC and Runit init systems in place of systemd."
-        )
+    key = "artix"
+    name = "Artix Linux"
+    description = "Rolling-release Arch derivative with OpenRC and Runit init systems in place of systemd."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("plasma-openrc", "KDE Plasma (OpenRC)", "Full-featured modern KDE Plasma desktop with OpenRC."),
-            FlavorInfo("xfce-openrc", "Xfce Edition (OpenRC)", "Fast and traditional Xfce desktop with OpenRC."),
-            FlavorInfo("base-openrc", "Base Edition (OpenRC)", "Minimal console installation image powered by OpenRC."),
-            FlavorInfo("base-runit", "Base Edition (Runit)", "Minimal console installation image powered by Runit."),
-            FlavorInfo("cinnamon-openrc", "Cinnamon Edition (OpenRC)", "Elegant Cinnamon desktop with OpenRC."),
-            FlavorInfo("mate-openrc", "MATE Edition (OpenRC)", "Classic MATE desktop with OpenRC.")
-        ]
+    FLAVORS = [
+        FlavorInfo("plasma-openrc", "KDE Plasma (OpenRC)"),
+        FlavorInfo("xfce-openrc", "Xfce Edition (OpenRC)"),
+        FlavorInfo("base-openrc", "Base Edition (OpenRC)"),
+        FlavorInfo("base-runit", "Base Edition (Runit)"),
+        FlavorInfo("cinnamon-openrc", "Cinnamon Edition (OpenRC)"),
+        FlavorInfo("mate-openrc", "MATE Edition (OpenRC)")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
-        target = flavor_id.lower()
-        mapping = {
-            "plasma-openrc": "plasma-openrc",
-            "xfce-openrc": "xfce-openrc",
-            "base-openrc": "base-openrc",
-            "base-runit": "base-runit",
-            "cinnamon-openrc": "cinnamon-openrc",
-            "mate-openrc": "mate-openrc"
-        }
-        sub = mapping.get(target, "plasma-openrc")
+        sub = flavor_id.lower()
 
         try:
             r = session.get("https://download.artixlinux.org/iso/", timeout=8)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
                 # Every image of this edition the directory holds, newest
                 # taken. The first link found is only the newest for as long
                 # as the mirror keeps nothing older beside it.
                 found = {}
-                for a in soup.find_all("a"):
-                    h = a.get("href", "")
+                for h in hrefs(r.text):
                     m = re.fullmatch(rf'artix-{re.escape(sub)}-(\d{{8}})-x86_64\.iso', h.split("/")[-1])
                     # The page links the weekly test images too, and those are
                     # always the newest thing on it.
@@ -64,32 +46,27 @@ class ArtixRecipe(DistroRecipe):
 
 
 class SparkyRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="sparky",
-            name="SparkyLinux",
-            category="Lightweight",
-            description="Fast, lightweight Debian-based operating system designed for old and modern hardware."
-        )
+    key = "sparky"
+    name = "SparkyLinux"
+    description = "Fast, lightweight Debian-based operating system designed for old and modern hardware."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("xfce", "Xfce Edition", "Default balanced and responsive Xfce desktop."),
-            FlavorInfo("kde", "KDE Plasma Edition", "Modern, visually rich KDE Plasma desktop."),
-            FlavorInfo("lxqt", "LXQt Edition", "Extremely lightweight modern Qt desktop."),
-            FlavorInfo("mate", "MATE Edition", "Classic desktop paradigm with traditional panel layout."),
-            FlavorInfo("minimalgui", "MinimalGUI (Openbox)", "Barebones graphical desktop with Openbox window manager."),
-            FlavorInfo("minimalcli", "MinimalCLI (Console)", "Console-only installation for custom minimal setups."),
-            FlavorInfo("rolling-xfce", "Rolling: Xfce", "Semi-rolling line on Debian testing, with Xfce."),
-            FlavorInfo("rolling-kde", "Rolling: KDE Plasma", "Semi-rolling line, with KDE Plasma."),
-            FlavorInfo("rolling-lxqt", "Rolling: LXQt", "Semi-rolling line, with LXQt."),
-            FlavorInfo("rolling-mate", "Rolling: MATE", "Semi-rolling line, with MATE."),
-            FlavorInfo("rolling-minimalgui", "Rolling: MinimalGUI", "Semi-rolling line, Openbox only."),
-            FlavorInfo("rolling-minimalcli", "Rolling: MinimalCLI", "Semi-rolling line, console only."),
-            FlavorInfo("rolling-gameover", "Rolling: GameOver", "For gamers: launchers, emulators and tools preinstalled."),
-            FlavorInfo("rolling-multimedia", "Rolling: Multimedia", "For audio, video and graphics work."),
-            FlavorInfo("rolling-rescue", "Rolling: Rescue", "Live system for repairing a broken installation."),
-        ]
+    FLAVORS = [
+        FlavorInfo("xfce", "Xfce Edition"),
+        FlavorInfo("kde", "KDE Plasma Edition"),
+        FlavorInfo("lxqt", "LXQt Edition"),
+        FlavorInfo("mate", "MATE Edition"),
+        FlavorInfo("minimalgui", "MinimalGUI (Openbox)"),
+        FlavorInfo("minimalcli", "MinimalCLI (Console)"),
+        FlavorInfo("rolling-xfce", "Rolling: Xfce"),
+        FlavorInfo("rolling-kde", "Rolling: KDE Plasma"),
+        FlavorInfo("rolling-lxqt", "Rolling: LXQt"),
+        FlavorInfo("rolling-mate", "Rolling: MATE"),
+        FlavorInfo("rolling-minimalgui", "Rolling: MinimalGUI"),
+        FlavorInfo("rolling-minimalcli", "Rolling: MinimalCLI"),
+        FlavorInfo("rolling-gameover", "Rolling: GameOver"),
+        FlavorInfo("rolling-multimedia", "Rolling: Multimedia"),
+        FlavorInfo("rolling-rescue", "Rolling: Rescue"),
+    ]
 
     STABLE_PAGE = "https://sparkylinux.org/download/stable/"
     ROLLING_PAGE = "https://sparkylinux.org/download/rolling/"
@@ -125,18 +102,13 @@ class SparkyRecipe(DistroRecipe):
 
 
 class TailsRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="tails",
-            name="Tails",
-            category="Security & Pentest",
-            description="The Amnesic Incognito Live System — privacy-preserving OS routing all traffic through Tor."
-        )
+    key = "tails"
+    name = "Tails"
+    description = "The Amnesic Incognito Live System — privacy-preserving OS routing all traffic through Tor."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Standard ISO Image", "Direct bootable live image configured to protect privacy via Tor.")
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Standard ISO Image")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -156,36 +128,25 @@ class TailsRecipe(DistroRecipe):
 
 
 class FydeOSRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="fydeos",
-            name="FydeOS",
-            category="Popular & Desktop",
-            description="Cloud-first ChromeOS fork with Android subsystem and Linux container support."
-        )
+    key = "fydeos"
+    name = "FydeOS"
+    description = "Cloud-first ChromeOS fork with Android subsystem and Linux container support."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("iris", "Intel Modern (6th - 14th Gen)", "Optimized for Intel Core processors with Intel HD/UHD and Iris Xe graphics."),
-            FlavorInfo("apu", "AMD Graphics & APUs", "Supports AMD discrete or integrated graphics and AMD or Intel CPUs."),
-            FlavorInfo("slim", "Intel Slim (Celeron & Pentium)", "Supports Intel Celeron and Pentium Processors (2015-2019).")
-        ]
+    FLAVORS = [
+        FlavorInfo("iris", "Intel Modern (6th - 14th Gen)"),
+        FlavorInfo("apu", "AMD Graphics & APUs"),
+        FlavorInfo("slim", "Intel Slim (Celeron & Pentium)")
+    ]
+
+    # flavor -> its download page
+    PAGES = {"iris": "intel-iris", "apu": "apu", "slim": "intel-slim"}
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        target = flavor_id.lower()
-        model = "iris"
-        if "apu" in target or "amd" in target:
-            model = "apu"
-        elif "slim" in target or "celeron" in target:
-            model = "slim"
-
         session = self.get_session()
         try:
-            r = session.get(f"https://fydeos.io/download/pc/{'intel-iris' if model == 'iris' else model if model == 'apu' else 'intel-slim'}/", timeout=8)
+            r = session.get(f"https://fydeos.io/download/pc/{self.PAGES[flavor_id]}/", timeout=8)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                for a in soup.find_all("a"):
-                    h = a.get("href", "")
+                for h in hrefs(r.text):
                     if "download.fydeos.io" in h and ".zip" in h:
                         fname = h.split("/")[-1]
                         m = re.search(r'v([0-9\.\-A-Z]+)', fname)
@@ -194,26 +155,21 @@ class FydeOSRecipe(DistroRecipe):
         except Exception as e:
             log.warning(f"[FydeOS] Scrape error: {e}")
 
-        raise ScrapeError(self.name, f"fydeos.io listed no current {model} image")
+        raise ScrapeError(self.name, f"fydeos.io listed no current {flavor_id} image")
 
 
 class HackerOSRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="hackeros",
-            name="HackerOS",
-            category="Security & Pentest",
-            description="Comprehensive penetration testing and ethical hacking distribution built for cybersecurity professionals."
-        )
+    key = "hackeros"
+    name = "HackerOS"
+    description = "Comprehensive penetration testing and ethical hacking distribution built for cybersecurity professionals."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("lts", "LTS Edition (Long Term Support)", "Rock-solid stable base equipped with essential security suites."),
-            FlavorInfo("official", "Official Edition", "Latest rolling tools and updated penetration testing frameworks."),
-            FlavorInfo("cybersecurity", "Cybersecurity Edition", "Comprehensive security research and digital forensics edition."),
-            FlavorInfo("gaming", "Gaming Edition", "Hybrid cybersecurity environment with gaming toolchains."),
-            FlavorInfo("nvidia", "NVIDIA Edition", "Pre-configured proprietary NVIDIA drivers for GPU-accelerated hash cracking.")
-        ]
+    FLAVORS = [
+        FlavorInfo("lts", "LTS Edition (Long Term Support)"),
+        FlavorInfo("official", "Official Edition"),
+        FlavorInfo("cybersecurity", "Cybersecurity Edition"),
+        FlavorInfo("gaming", "Gaming Edition"),
+        FlavorInfo("nvidia", "NVIDIA Edition")
+    ]
 
     RSS = "https://sourceforge.net/projects/hackeros/rss?path=/"
 
@@ -228,14 +184,9 @@ class HackerOSRecipe(DistroRecipe):
     }
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        target = flavor_id.lower()
-        for name in self.EDITIONS:
-            if name.startswith(target) or target.startswith(name[:5]):
-                edition = name
-                break
-        else:
-            edition = "lts"
-        folder, marker = self.EDITIONS[edition]
+        if flavor_id not in self.EDITIONS:
+            raise ScrapeError(self.name, f"unknown HackerOS edition {flavor_id!r}")
+        folder, marker = self.EDITIONS[flavor_id]
 
         session = self.get_session()
         try:
@@ -251,7 +202,7 @@ class HackerOSRecipe(DistroRecipe):
         )
         found = pattern.findall(r.text)
         if not found:
-            raise ScrapeError(self.name, f"release feed listed no {edition} ISO")
+            raise ScrapeError(self.name, f"release feed listed no {flavor_id} ISO")
 
         # Newest version first.
         found.sort(key=lambda f: tuple(int(x) for x in f[1].split(".") if x.isdigit()), reverse=True)
@@ -261,37 +212,24 @@ class HackerOSRecipe(DistroRecipe):
 
 
 class AlmaLinuxRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="almalinux",
-            name="AlmaLinux OS",
-            category="Popular & Desktop",
-            description="1:1 binary compatible Red Hat Enterprise Linux (RHEL) community enterprise operating system."
-        )
+    key = "almalinux"
+    name = "AlmaLinux OS"
+    description = "1:1 binary compatible Red Hat Enterprise Linux (RHEL) community enterprise operating system."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("minimal", "Minimal Install", "Compact basic installation containing only core packages for servers and custom setups."),
-            FlavorInfo("dvd", "Full DVD", "Complete offline installation repository with all packages and desktop environments."),
-            FlavorInfo("boot", "Boot / Netinstall", "Lightweight network boot installer downloading selected packages during install.")
-        ]
+    FLAVORS = [
+        FlavorInfo("minimal", "Minimal Install"),
+        FlavorInfo("dvd", "Full DVD"),
+        FlavorInfo("boot", "Boot / Netinstall")
+    ]
 
-    REPO_ROOT = "https://repo.almalinux.org/almalinux/"
+    ROOT = "https://repo.almalinux.org/almalinux/"
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        target = flavor_id.lower()
-        if "dvd" in target:
-            f = "dvd"
-        elif "boot" in target:
-            f = "boot"
-        else:
-            f = "minimal"
-
         session = self.get_session()
         # The repo root lists every series (8, 9, 10, plus point releases);
         # discover the newest major rather than pinning one.
         try:
-            r = session.get(self.REPO_ROOT, timeout=15)
+            r = session.get(self.ROOT, timeout=15)
             r.raise_for_status()
         except Exception as e:
             log.warning(f"[AlmaLinux] Scrape error: {e}")
@@ -301,8 +239,10 @@ class AlmaLinuxRecipe(DistroRecipe):
         if not majors:
             raise ScrapeError(self.name, "repository index advertised no release series")
 
+        # Only the newest major: when its images are not up yet, an older
+        # major's point release is not the current one.
         major = max(majors)
-        iso_dir = f"{self.REPO_ROOT}{major}/isos/x86_64/"
+        iso_dir = f"{self.ROOT}{major}/isos/x86_64/"
         try:
             listing = session.get(iso_dir, timeout=15)
             listing.raise_for_status()
@@ -313,8 +253,8 @@ class AlmaLinuxRecipe(DistroRecipe):
         # The point release by name, never the "-latest-" alias beside it:
         # that name and "10-latest" stay the same through every point release,
         # so an image downloaded at 10.2 would read as up to date for good.
-        found = re.findall(rf'(AlmaLinux-({major}\.\d+)-x86_64-{f}\.iso)', listing.text)
+        found = re.findall(rf'(AlmaLinux-({major}\.\d+)-x86_64-{flavor_id}\.iso)', listing.text)
         if not found:
-            raise ScrapeError(self.name, f"no AlmaLinux {major} {f} image listed")
-        fname, ver = max(found, key=lambda pair: tuple(int(n) for n in pair[1].split(".")))
+            raise ScrapeError(self.name, f"no AlmaLinux {major} {flavor_id} image listed")
+        fname, ver = max(found, key=lambda pair: version_key(pair[1]))
         return DownloadInfo(version=ver, url=iso_dir + fname, filename=fname)

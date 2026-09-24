@@ -5,7 +5,7 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 720-odd tests, no network and no display needed
+pytest                  # 750-odd tests, no network and no display needed
 pytest -m network       # also resolve all 216 editions against live mirrors
 ```
 
@@ -33,13 +33,15 @@ src/
 │   │                      adoption candidates and exclusions
 │   ├── iso_identity.py    which official download a filename is, if any
 │   ├── ventoy_config.py   ventoy.json aliases and the search root
-│   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError, is_older
-│   ├── icons.py           logo sources, rasterising and High-DPI caching
+│   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError, and
+│   │                      what recipes share: version_key, is_older, hrefs,
+│   │                      table_rows, sourceforge_rss, github_latest
+│   ├── icons.py           logo sources, and High-DPI caching of the shipped logos
 │   ├── app_update.py      whether a newer VEIM has been released
 │   ├── browser.py         opening a link without the bundle's environment
 │   └── logger.py
 ├── recipes/               one module per distribution family
-│   └── registry.py        registration and the catalog taxonomy
+│   └── registry.py        CATALOG: every recipe and its category
 ├── assets/
 │   ├── branding/          VEIM's own mark
 │   └── icons/             one rendered logo per catalog entry, shipped
@@ -69,9 +71,14 @@ Views never call `setStyleSheet` themselves. Every widget carries an
 
 ## Adding a distribution
 
-Subclass `DistroRecipe`, implement `get_flavors()` and `fetch_download_info()`,
-then register it in `src/recipes/registry.py` and add it to `CATEGORY_BY_KEY`
-there — registration fails loudly if the entry is missing.
+Subclass `DistroRecipe`, set `key`, `name`, `description` and `FLAVORS` (a
+list of `FlavorInfo(id, name)`) and implement `fetch_download_info()`, then add
+the class to `CATALOG` in `src/recipes/registry.py` with its category.
+
+`src/core/recipe_base.py` has what recipes share: `hrefs()` and `table_rows()`
+read a page, `version_key()` sorts versions, and `github_latest()` and
+`sourceforge_rss()` read those two release feeds. Use them rather than a local
+copy.
 
 `fetch_download_info()` must `raise ScrapeError(self.name, reason)` when it
 cannot determine a current release. Never return a hardcoded URL as a fallback;
@@ -135,6 +142,8 @@ to GitHub Releases:
 The tag has to match `__version__` or the workflow stops before building
 anything — the in-app update check compares the running version against the
 release tag, so a mismatch would either hide a release or advertise one forever.
+Both are a plain X.Y.Z, which the workflow also enforces: the check compares
+the numbers alone, so a `1.0.8rc1` would never be offered `1.0.8`.
 
 Publishing the release from the GitHub UI works too: that creates the tag, which
 starts the same workflow, and the installers are uploaded to the release you
@@ -143,9 +152,9 @@ installers and `SHA256SUMS.txt` attached.
 
 Everything starts from PyInstaller: `pyinstaller packaging/veim.spec` produces
 `dist/VEIM` (`dist/VEIM.app` on macOS), and the per-platform scripts under
-`packaging/` wrap that. Building locally needs
-[Inno Setup](https://jrsoftware.org/isdl.php) on Windows and `appimagetool` on
-Linux; macOS needs only what ships with the system.
+`packaging/` wrap that. Building
+locally needs [Inno Setup](https://jrsoftware.org/isdl.php) on Windows and
+`appimagetool` on Linux; macOS needs only what ships with the system.
 
 A frozen build runs from a read-only bundle, so nothing may write beside the
 executable. `src/core/paths.py` is the only place that decides where runtime
@@ -153,9 +162,12 @@ files go, and a test fails if the spec stops bundling an asset the app reads.
 
 ## Scripts
 
+The icon scripts need Pillow, which is a development dependency only, so
+install with `pip install -e ".[dev]"` first.
+
 | Script | Purpose |
 |---|---|
-| `tools/fetch_icons.py` | Renders the distribution logos in `ICON_URLS` into `src/assets/icons/`, which is committed and shipped. Checks each result: Qt renders a subset of SVG and fails silently on the rest, writing a blank image rather than none. |
+| `tools/fetch_icons.py` | Fetches and renders the distribution logos in `ICON_URLS` into `src/assets/icons/`, which is committed and shipped; only missing ones, or all of them with `--force`. Checks each result: Qt renders a subset of SVG and fails silently on the rest, writing a blank image rather than none. |
 | `tools/build_icons.py` | Renders `src/assets/branding/veim.svg` into the PNG, `.ico` and `.icns` files the app and the installers use. Run it after editing the SVG. |
 | `tools/capture_docs_screenshots.py` | Regenerates the images the README embeds, from a scripted drive that puts a row in every state, plus the adoption dialog. Refuses to save if the sidebar shows a real path instead of `K:\`. Needs a display. |
 | `tools/readme_catalog.py` | Prints the README's catalog section from the registry; `--write` puts it in place. |

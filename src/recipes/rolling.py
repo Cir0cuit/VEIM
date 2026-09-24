@@ -1,24 +1,17 @@
 import re
-from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs
 from src.core.logger import log
 
 class ManjaroRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="manjaro",
-            name="Manjaro",
-            category="Rolling Release",
-            description="User-friendly, accessible desktop Linux based on Arch."
-        )
+    key = "manjaro"
+    name = "Manjaro"
+    description = "User-friendly, accessible desktop Linux based on Arch."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("plasma", "KDE Plasma", "Flagship modern, powerful desktop experience."),
-            FlavorInfo("gnome", "GNOME", "Clean, gesture-oriented GNOME desktop."),
-            FlavorInfo("xfce", "Xfce", "Lightweight, reliable desktop edition.")
-        ]
+    FLAVORS = [
+        FlavorInfo("plasma", "KDE Plasma"),
+        FlavorInfo("gnome", "GNOME"),
+        FlavorInfo("xfce", "Xfce")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -30,10 +23,8 @@ class ManjaroRecipe(DistroRecipe):
         try:
             r = session.get(url, headers=sf_headers, timeout=10)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
                 versions = []
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
+                for href in hrefs(r.text):
                     if f"/projects/manjarolinux/files/{sf_key}/" in href and "stats" not in href:
                         parts = href.strip("/").split("/")
                         if parts:
@@ -48,10 +39,9 @@ class ManjaroRecipe(DistroRecipe):
                     sub_url = f"{url}{latest_ver}/"
                     r_sub = session.get(sub_url, headers=sf_headers, timeout=10)
                     if r_sub.status_code == 200:
-                        soup_sub = BeautifulSoup(r_sub.text, "html.parser")
-                        for a2 in soup_sub.find_all("a", href=True):
-                            name_span = a2.find("span", class_="name")
-                            fname = name_span.text if name_span else a2.text.strip()
+                        for href in hrefs(r_sub.text):
+                            # Links look like .../26.1.2/manjaro-kde-26.1.2-260910-linux71.iso/download
+                            fname = href.removesuffix("/download").rsplit("/", 1)[-1]
                             if fname.endswith(".iso") and "minimal" not in fname.lower():
                                 dl_link = f"https://downloads.sourceforge.net/project/manjarolinux/{sf_key}/{latest_ver}/{fname}"
                                 return DownloadInfo(version=latest_ver, url=dl_link, filename=fname)
@@ -62,18 +52,13 @@ class ManjaroRecipe(DistroRecipe):
         raise ScrapeError(self.name, f"no current {sf_key} ISO listed on the Manjaro mirror")
 
 class EndeavourRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="endeavour",
-            name="EndeavourOS",
-            category="Rolling Release",
-            description="Terminal-centric Arch derivative with a vibrant, welcoming community."
-        )
+    key = "endeavour"
+    name = "EndeavourOS"
+    description = "Terminal-centric Arch derivative with a vibrant, welcoming community."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Galileo Neo", "Standard live installer ISO with Calamares.")
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Galileo Neo")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -82,10 +67,8 @@ class EndeavourRecipe(DistroRecipe):
         try:
             r = session.get(mirror, timeout=10)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
                 isos = []
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
+                for href in hrefs(r.text):
                     if href.endswith(".iso") and "endeavouros" in href.lower():
                         isos.append(href)
                 if isos:
@@ -107,18 +90,13 @@ class EndeavourRecipe(DistroRecipe):
 
 
 class OmarchyRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="omarchy",
-            name="Omarchy",
-            category="Rolling Release",
-            description="Opinionated Arch and Hyprland setup, shipped as a ready-to-boot image.",
-        )
+    key = "omarchy"
+    name = "Omarchy"
+    description = "Opinionated Arch and Hyprland setup, shipped as a ready-to-boot image."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Standard", "Arch with the Omarchy Hyprland desktop preconfigured."),
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Standard"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()

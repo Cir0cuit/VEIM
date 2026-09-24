@@ -5,7 +5,8 @@ placeholder, which is how tuxedo and hackeros shipped without real logos.
 """
 import os
 
-from src.core.icons import ICON_URLS, BUNDLED_PREFIX, BRANDING_DIR
+from src.core.branding import BRANDING_DIR
+from src.core.icons import ICON_URLS, BUNDLED_PREFIX
 from src.recipes.registry import registry
 
 

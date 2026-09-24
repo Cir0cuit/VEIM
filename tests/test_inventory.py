@@ -103,6 +103,15 @@ def test_roundtrip_preserves_fields():
     assert InventoryItem.from_dict(item.to_dict()).to_dict() == item.to_dict()
 
 
+def test_a_record_writes_the_keys_existing_drives_carry():
+    """Drives in the field hold inventories written by every earlier release."""
+    item = InventoryItem(key="arch", flavor_id="", display_name="Arch Linux",
+                         version="2026.09.01", filename="a.iso")
+    assert list(item.to_dict()) == ["key", "flavor_id", "display_name", "version",
+                                    "filename", "size_bytes", "sha256", "url",
+                                    "installed_at"]
+
+
 def test_two_isos_of_one_distro_and_flavor_both_survive(drive_root, make_iso):
     """Regression: distinct ISOs that resolve to one key must not overwrite.
 

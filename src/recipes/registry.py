@@ -35,166 +35,90 @@ CATEGORY_ORDER = [
     "Lightweight",
 ]
 
-CATEGORY_BY_KEY = {
-    "ubuntu": "Beginner Friendly",
-    "mint": "Beginner Friendly",
-    "zorin": "Beginner Friendly",
-    "popos": "Beginner Friendly",
-    "elementary": "Beginner Friendly",
-    "tuxedo": "Beginner Friendly",
-    "fydeos": "Beginner Friendly",
-    "linuxlite": "Beginner Friendly",
+# Every entry in the catalog, and the filter chip it appears under.
+CATALOG = {
+    UbuntuRecipe: "Beginner Friendly",
+    MintRecipe: "Beginner Friendly",
+    ZorinRecipe: "Beginner Friendly",
+    PopOSRecipe: "Beginner Friendly",
+    ElementaryRecipe: "Beginner Friendly",
+    TuxedoRecipe: "Beginner Friendly",
+    FydeOSRecipe: "Beginner Friendly",
+    LinuxLiteRecipe: "Beginner Friendly",
 
-    "fedora": "General Purpose",
-    "fedora_atomic": "General Purpose",
-    "fedora_spins": "General Purpose",
-    "fedora_labs": "General Purpose",
-    "debian": "General Purpose",
-    "opensuse": "General Purpose",
-    "kde_neon": "General Purpose",
-    "mageia": "General Purpose",
-    "mxlinux": "General Purpose",
+    FedoraRecipe: "General Purpose",
+    FedoraAtomicRecipe: "General Purpose",
+    FedoraSpinsRecipe: "General Purpose",
+    FedoraLabsRecipe: "General Purpose",
+    DebianRecipe: "General Purpose",
+    OpenSUSERecipe: "General Purpose",
+    KDENeonRecipe: "General Purpose",
+    MageiaRecipe: "General Purpose",
+    MXLinuxRecipe: "General Purpose",
 
-    "arch": "Rolling Release",
-    "manjaro": "Rolling Release",
-    "endeavour": "Rolling Release",
-    "artix": "Rolling Release",
-    "omarchy": "Rolling Release",
+    ArchRecipe: "Rolling Release",
+    ManjaroRecipe: "Rolling Release",
+    EndeavourRecipe: "Rolling Release",
+    ArtixRecipe: "Rolling Release",
+    OmarchyRecipe: "Rolling Release",
 
-    "gentoo": "Enthusiast",
-    "slackware": "Enthusiast",
-    "nixos": "Enthusiast",
-    "devuan": "Enthusiast",
-    "void": "Enthusiast",
+    GentooRecipe: "Enthusiast",
+    SlackwareRecipe: "Enthusiast",
+    NixOSRecipe: "Enthusiast",
+    DevuanRecipe: "Enthusiast",
+    VoidRecipe: "Enthusiast",
 
-    "bazzite": "Gaming & Performance",
-    "cachyos": "Gaming & Performance",
-    "garuda": "Gaming & Performance",
-    "nobara": "Gaming & Performance",
-    "pikaos": "Gaming & Performance",
+    BazziteRecipe: "Gaming & Performance",
+    CachyOSRecipe: "Gaming & Performance",
+    GarudaRecipe: "Gaming & Performance",
+    NobaraRecipe: "Gaming & Performance",
+    PikaOSRecipe: "Gaming & Performance",
 
-    "kali": "Security & Privacy",
-    "parrot": "Security & Privacy",
-    "tails": "Security & Privacy",
-    "qubes": "Security & Privacy",
-    "hackeros": "Security & Privacy",
-    "caine": "Security & Privacy",
+    KaliRecipe: "Security & Privacy",
+    ParrotRecipe: "Security & Privacy",
+    TailsRecipe: "Security & Privacy",
+    QubesRecipe: "Security & Privacy",
+    HackerOSRecipe: "Security & Privacy",
+    CaineRecipe: "Security & Privacy",
 
-    "almalinux": "Server & Enterprise",
-    "rocky": "Server & Enterprise",
-    "proxmox": "Server & Enterprise",
-    "centos": "Server & Enterprise",
-    "oracle": "Server & Enterprise",
-    "openeuler": "Server & Enterprise",
-    "freebsd": "Server & Enterprise",
-    "xcpng": "Server & Enterprise",
-    "talos": "Server & Enterprise",
-    "ipfire": "Server & Enterprise",
+    AlmaLinuxRecipe: "Server & Enterprise",
+    RockyLinuxRecipe: "Server & Enterprise",
+    ProxmoxRecipe: "Server & Enterprise",
+    CentOSStreamRecipe: "Server & Enterprise",
+    OracleLinuxRecipe: "Server & Enterprise",
+    OpenEulerRecipe: "Server & Enterprise",
+    FreeBSDRecipe: "Server & Enterprise",
+    XCPngRecipe: "Server & Enterprise",
+    TalosRecipe: "Server & Enterprise",
+    IPFireRecipe: "Server & Enterprise",
 
-    "systemrescue": "Rescue & Diagnostics",
-    "clonezilla": "Rescue & Diagnostics",
-    "gparted": "Rescue & Diagnostics",
-    "rescuezilla": "Rescue & Diagnostics",
-    "grml": "Rescue & Diagnostics",
-    "memtest": "Rescue & Diagnostics",
-    "shredos": "Rescue & Diagnostics",
-    "netboot": "Rescue & Diagnostics",
-    "supergrub2": "Rescue & Diagnostics",
-    "hrmpf": "Rescue & Diagnostics",
+    SystemRescueRecipe: "Rescue & Diagnostics",
+    ClonezillaRecipe: "Rescue & Diagnostics",
+    GPartedRecipe: "Rescue & Diagnostics",
+    RescuezillaRecipe: "Rescue & Diagnostics",
+    GrmlRecipe: "Rescue & Diagnostics",
+    MemtestRecipe: "Rescue & Diagnostics",
+    ShredOSRecipe: "Rescue & Diagnostics",
+    NetbootRecipe: "Rescue & Diagnostics",
+    SuperGrub2Recipe: "Rescue & Diagnostics",
+    HrmpfRecipe: "Rescue & Diagnostics",
 
-    "antix": "Lightweight",
-    "puppy": "Lightweight",
-    "tinycore": "Lightweight",
-    "alpine": "Lightweight",
-    "sparky": "Lightweight",
-    "q4os": "Lightweight",
+    AntiXRecipe: "Lightweight",
+    PuppyRecipe: "Lightweight",
+    TinyCoreRecipe: "Lightweight",
+    AlpineRecipe: "Lightweight",
+    SparkyRecipe: "Lightweight",
+    Q4OSRecipe: "Lightweight",
 }
 
 
 class RecipeRegistry:
     def __init__(self):
         self._recipes: Dict[str, DistroRecipe] = {}
-        self._register_defaults()
-
-    def _register(self, recipe: DistroRecipe):
-        if recipe.key not in CATEGORY_BY_KEY:
-            raise KeyError(
-                f"{recipe.key!r} has no entry in CATEGORY_BY_KEY - add one so it "
-                "appears under a filter chip"
-            )
-        recipe.category = CATEGORY_BY_KEY[recipe.key]
-        self._recipes[recipe.key] = recipe
-
-    def _register_defaults(self):
-        self._register(FedoraRecipe())
-        self._register(FedoraAtomicRecipe())
-        self._register(FedoraSpinsRecipe())
-        self._register(FedoraLabsRecipe())
-        self._register(UbuntuRecipe())
-        self._register(MintRecipe())
-        self._register(DebianRecipe())
-        self._register(PopOSRecipe())
-        self._register(ZorinRecipe())
-        self._register(LinuxLiteRecipe())
-        self._register(KDENeonRecipe())
-        self._register(OpenSUSERecipe())
-        self._register(ElementaryRecipe())
-        self._register(TuxedoRecipe())
-        self._register(MageiaRecipe())
-        self._register(AlmaLinuxRecipe())
-        self._register(FydeOSRecipe())
-        self._register(MXLinuxRecipe())
-        self._register(DevuanRecipe())
-        self._register(RockyLinuxRecipe())
-        self._register(CentOSStreamRecipe())
-        self._register(OracleLinuxRecipe())
-        self._register(OpenEulerRecipe())
-        self._register(FreeBSDRecipe())
-        self._register(XCPngRecipe())
-        self._register(TalosRecipe())
-        self._register(IPFireRecipe())
-        self._register(SlackwareRecipe())
-
-        self._register(ArchRecipe())
-        self._register(ManjaroRecipe())
-        self._register(EndeavourRecipe())
-        self._register(ArtixRecipe())
-        self._register(NixOSRecipe())
-        self._register(VoidRecipe())
-        self._register(GentooRecipe())
-        self._register(OmarchyRecipe())
-
-        self._register(BazziteRecipe())
-        self._register(GarudaRecipe())
-        self._register(CachyOSRecipe())
-        self._register(NobaraRecipe())
-        self._register(PikaOSRecipe())
-
-        self._register(KaliRecipe())
-        self._register(ParrotRecipe())
-        self._register(TailsRecipe())
-        self._register(HackerOSRecipe())
-        self._register(QubesRecipe())
-        self._register(CaineRecipe())
-
-        self._register(ClonezillaRecipe())
-        self._register(SystemRescueRecipe())
-        self._register(GrmlRecipe())
-        self._register(MemtestRecipe())
-        self._register(ProxmoxRecipe())
-        self._register(GPartedRecipe())
-        self._register(RescuezillaRecipe())
-        self._register(ShredOSRecipe())
-        self._register(NetbootRecipe())
-        self._register(SuperGrub2Recipe())
-        self._register(HrmpfRecipe())
-
-        self._register(PuppyRecipe())
-        self._register(TinyCoreRecipe())
-        self._register(AlpineRecipe())
-        self._register(SparkyRecipe())
-        self._register(AntiXRecipe())
-        self._register(Q4OSRecipe())
+        for cls, category in CATALOG.items():
+            recipe = cls()
+            recipe.category = category
+            self._recipes[recipe.key] = recipe
 
     def get_recipe(self, key: str) -> Optional[DistroRecipe]:
         return self._recipes.get(key)
@@ -206,10 +130,5 @@ class RecipeRegistry:
         """"All" plus every category that currently has at least one entry."""
         present = {r.category for r in self._recipes.values()}
         return ["All"] + [c for c in CATEGORY_ORDER if c in present]
-
-    def get_by_category(self, category: str) -> List[DistroRecipe]:
-        if not category or category == "All":
-            return self.get_all_recipes()
-        return [r for r in self._recipes.values() if r.category == category]
 
 registry = RecipeRegistry()

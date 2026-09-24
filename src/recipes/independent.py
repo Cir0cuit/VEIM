@@ -4,32 +4,22 @@ Void has its own package manager and init; Gentoo builds from source; Slackware
 is the oldest surviving distribution.
 """
 import re
-from typing import List
 
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, version_key
 from src.core.logger import log
 
 
-def _version_key(version: str):
-    return tuple(int(p) for p in re.findall(r'\d+', version))
-
-
 class VoidRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="void",
-            name="Void Linux",
-            category="Rolling Release",
-            description="Independent rolling release with the xbps package manager and runit init.",
-        )
+    key = "void"
+    name = "Void Linux"
+    description = "Independent rolling release with the xbps package manager and runit init."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("base", "Base (glibc)", "Console-only image on the glibc C library."),
-            FlavorInfo("xfce", "Xfce (glibc)", "Live desktop image on glibc."),
-            FlavorInfo("musl-base", "Base (musl)", "Console-only image on the musl C library."),
-            FlavorInfo("musl-xfce", "Xfce (musl)", "Live desktop image on musl."),
-        ]
+    FLAVORS = [
+        FlavorInfo("base", "Base (glibc)"),
+        FlavorInfo("xfce", "Xfce (glibc)"),
+        FlavorInfo("musl-base", "Base (musl)"),
+        FlavorInfo("musl-xfce", "Xfce (musl)"),
+    ]
 
     _SEGMENT = {
         "base": ("x86_64", "base"),
@@ -67,19 +57,14 @@ class VoidRecipe(DistroRecipe):
 
 
 class GentooRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="gentoo",
-            name="Gentoo",
-            category="Rolling Release",
-            description="Source-based distribution built and tuned for your own machine.",
-        )
+    key = "gentoo"
+    name = "Gentoo"
+    description = "Source-based distribution built and tuned for your own machine."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("minimal", "Minimal Install CD", "Small console-only installation medium."),
-            FlavorInfo("livegui", "LiveGUI", "Full graphical live environment, around 4.7 GB."),
-        ]
+    FLAVORS = [
+        FlavorInfo("minimal", "Minimal Install CD"),
+        FlavorInfo("livegui", "LiveGUI"),
+    ]
 
     _POINTER = {
         "minimal": ("latest-install-amd64-minimal.txt", "install-amd64-minimal"),
@@ -112,18 +97,13 @@ class GentooRecipe(DistroRecipe):
 
 
 class SlackwareRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="slackware",
-            name="Slackware",
-            category="Popular & Desktop",
-            description="The oldest surviving Linux distribution, kept deliberately simple.",
-        )
+    key = "slackware"
+    name = "Slackware"
+    description = "The oldest surviving Linux distribution, kept deliberately simple."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("install-dvd", "Install DVD (64-bit)", "Complete installation medium."),
-        ]
+    FLAVORS = [
+        FlavorInfo("install-dvd", "Install DVD (64-bit)"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -133,7 +113,7 @@ class SlackwareRecipe(DistroRecipe):
             index.raise_for_status()
             # 15.0 must rank above 14.2, which a string sort gets wrong.
             versions = sorted(set(re.findall(r'href="slackware64-(\d+\.\d+)/"', index.text)),
-                              key=_version_key)
+                              key=version_key)
             for ver in reversed(versions):
                 listing = session.get(f"{root}slackware-iso/slackware64-{ver}-iso/", timeout=20)
                 if listing.status_code != 200:

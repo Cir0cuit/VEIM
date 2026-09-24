@@ -10,35 +10,7 @@ import pytest
 
 from src.core.recipe_base import ScrapeError
 from src.recipes.lightweight import PuppyRecipe, TinyCoreRecipe
-
-
-def _listing(*names):
-    return "<html><body>" + "".join(f'<a href="{n}">{n}</a>' for n in names) + "</body></html>"
-
-
-class _Resp:
-    def __init__(self, text, status_code=200):
-        self.text = text
-        self.status_code = status_code
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
-
-
-class _Session:
-    """Serves `pages` by URL; anything else is a 404."""
-    headers = {}
-
-    def __init__(self, pages):
-        self.pages = pages
-        self.asked = []
-
-    def get(self, url, **kw):
-        self.asked.append(url)
-        if url in self.pages:
-            return _Resp(self.pages[url])
-        return _Resp("", 404)
+from tests.test_stale_recipes import _listing, _with
 
 
 TINYCORE = {
@@ -58,10 +30,7 @@ TINYCORE = {
 
 @pytest.fixture
 def tinycore(monkeypatch):
-    recipe = TinyCoreRecipe()
-    session = _Session(dict(TINYCORE))
-    monkeypatch.setattr(recipe, "get_session", lambda: session)
-    return recipe, session
+    return _with(monkeypatch, TinyCoreRecipe(), TINYCORE)
 
 
 @pytest.mark.parametrize("flavor,filename", [
@@ -111,10 +80,7 @@ PUPPY = {
 
 @pytest.fixture
 def puppy(monkeypatch):
-    recipe = PuppyRecipe()
-    session = _Session(dict(PUPPY))
-    monkeypatch.setattr(recipe, "get_session", lambda: session)
-    return recipe, session
+    return _with(monkeypatch, PuppyRecipe(), PUPPY)
 
 
 @pytest.mark.parametrize("flavor,version,filename", [

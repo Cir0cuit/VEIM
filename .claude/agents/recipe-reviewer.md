@@ -9,6 +9,8 @@ Review the uncommitted and branch changes (`git diff`, `git diff origin/dev...HE
 - No label ("latest", "current", "stable") is ever returned as a version.
 - Network errors raise `ScrapeError`; nothing falls back to an older reachable release or a hardcoded URL.
 - `sha256` is supplied when the project publishes one.
+- Pages and feeds are read with the helpers in `src/core/recipe_base.py` (`hrefs`, `table_rows`, `version_key`, `github_latest`, `sourceforge_rss`), not a local copy of one.
+- A new recipe is in `CATALOG` in `src/recipes/registry.py`, under a category from `CATEGORY_ORDER`.
 - A filename without the version is renamed to carry one, and an `iso_identity` rule reads it back to the same key, flavor id and version with an exact, whole-name pattern.
 - A behaviour fix comes with an offline case in `tests/test_stale_recipes.py`.
 

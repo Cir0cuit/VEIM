@@ -28,7 +28,7 @@ def _result(state, **kwargs):
 
 def _update(version="2.0.0", url="https://example.invalid/releases/v2.0.0"):
     return _result(app_update.UPDATE_AVAILABLE, latest=version,
-                   release=app_update.Release(version, url, ""))
+                   release=app_update.Release(version, url))
 
 
 # ------------------------------------------------------------------ at rest
@@ -197,7 +197,7 @@ def test_it_is_not_the_distribution_update_check(button, qtbot, tmp_path):
     published for the ISOs on the drive."""
     from src.ui.dashboard import DashboardView
 
-    view = DashboardView(drive_path=str(tmp_path), on_change_drive=lambda: None)
+    view = DashboardView(drive_path=str(tmp_path))
     qtbot.addWidget(view)
 
     assert button.text() != view.btn_check_all.text()

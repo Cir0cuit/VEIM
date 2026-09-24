@@ -212,7 +212,7 @@ def test_rocky_names_the_point_release(monkeypatch):
 
 
 def test_almalinux_names_the_point_release(monkeypatch):
-    root = AlmaLinuxRecipe.REPO_ROOT
+    root = AlmaLinuxRecipe.ROOT
     recipe, _ = _with(monkeypatch, AlmaLinuxRecipe(), {
         root: _listing("8/", "9/", "10/", "10.2/"),
         f"{root}10/isos/x86_64/": _listing(
@@ -222,6 +222,22 @@ def test_almalinux_names_the_point_release(monkeypatch):
     info = recipe.fetch_download_info("minimal")
 
     assert (info.version, info.filename) == ("10.2", "AlmaLinux-10.2-x86_64-minimal.iso")
+
+
+@pytest.mark.parametrize("new_major", [None, _listing("CHECKSUM")], ids=["404", "no-image"])
+def test_almalinux_does_not_fall_back_to_an_older_major(monkeypatch, new_major):
+    root = AlmaLinuxRecipe.ROOT
+    pages = {
+        root: _listing("9/", "10/", "11/"),
+        f"{root}10/isos/x86_64/": _listing("AlmaLinux-10.2-x86_64-dvd.iso"),
+    }
+    if new_major is not None:
+        pages[f"{root}11/isos/x86_64/"] = new_major
+    recipe, _ = _with(monkeypatch, AlmaLinuxRecipe(), pages)
+
+    with pytest.raises(ScrapeError) as err:
+        recipe.fetch_download_info("dvd")
+    assert "AlmaLinux 11" in err.value.reason
 
 
 # ------------------------------------------------------------------ Bazzite

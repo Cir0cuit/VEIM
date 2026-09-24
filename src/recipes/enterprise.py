@@ -6,29 +6,20 @@ exactly the images people keep on a Ventoy stick for provisioning work.
 import re
 from typing import List
 
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, version_key
 from src.core.logger import log
 
 
-def _version_key(version: str):
-    return tuple(int(p) for p in re.findall(r'\d+', version))
-
-
 class RockyLinuxRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="rocky",
-            name="Rocky Linux",
-            category="Popular & Desktop",
-            description="Community enterprise OS, binary compatible with Red Hat Enterprise Linux.",
-        )
+    key = "rocky"
+    name = "Rocky Linux"
+    description = "Community enterprise OS, binary compatible with Red Hat Enterprise Linux."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("dvd", "DVD", "Full installation medium with a package set included."),
-            FlavorInfo("minimal", "Minimal", "Smallest bootable installer."),
-            FlavorInfo("boot", "Boot", "Network installer; fetches everything during setup."),
-        ]
+    FLAVORS = [
+        FlavorInfo("dvd", "DVD"),
+        FlavorInfo("minimal", "Minimal"),
+        FlavorInfo("boot", "Boot"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         if flavor_id not in ("dvd", "minimal", "boot"):
@@ -43,7 +34,7 @@ class RockyLinuxRecipe(DistroRecipe):
             # ("10.2"); the bare major tracks the newest point release, so
             # prefer it. A string sort would also rank "9.8" above "10".
             majors = sorted({m for m in re.findall(r'href="(\d+)/"', index.text)},
-                            key=_version_key)
+                            key=version_key)
             for major in reversed(majors):
                 listing = session.get(f"{root}{major}/isos/x86_64/", timeout=20)
                 if listing.status_code != 200:
@@ -56,7 +47,7 @@ class RockyLinuxRecipe(DistroRecipe):
                 found = re.findall(
                     rf'(Rocky-({major}\.\d+)-x86_64-{flavor_id}\d?\.iso)', listing.text)
                 if found:
-                    fname, ver = max(found, key=lambda pair: _version_key(pair[1]))
+                    fname, ver = max(found, key=lambda pair: version_key(pair[1]))
                     return DownloadInfo(
                         version=ver,
                         url=f"{root}{major}/isos/x86_64/{fname}",
@@ -69,14 +60,10 @@ class RockyLinuxRecipe(DistroRecipe):
 
 
 class ProxmoxRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="proxmox",
-            name="Proxmox",
-            category="Rescue & Diagnostics",
-            description="Virtual Environment, Backup Server, Mail Gateway and Datacenter Manager, "
-                        "each a bare-metal appliance managed from a browser.",
-        )
+    key = "proxmox"
+    name = "Proxmox"
+    description = ("Virtual Environment, Backup Server, Mail Gateway and Datacenter Manager, "
+                   "each a bare-metal appliance managed from a browser.")
 
     # flavor -> the product's name in its image file. "installer" is VE, and
     # keeps the id it had when VE was the only product listed.
@@ -87,13 +74,12 @@ class ProxmoxRecipe(DistroRecipe):
         "datacenter-manager": "proxmox-datacenter-manager",
     }
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("installer", "Virtual Environment", "KVM and LXC virtualisation platform."),
-            FlavorInfo("backup-server", "Backup Server", "Deduplicating backup target for VMs, containers and hosts."),
-            FlavorInfo("mail-gateway", "Mail Gateway", "Spam and virus filtering in front of a mail server."),
-            FlavorInfo("datacenter-manager", "Datacenter Manager", "One view over several Proxmox clusters."),
-        ]
+    FLAVORS = [
+        FlavorInfo("installer", "Virtual Environment"),
+        FlavorInfo("backup-server", "Backup Server"),
+        FlavorInfo("mail-gateway", "Mail Gateway"),
+        FlavorInfo("datacenter-manager", "Datacenter Manager"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         product = self.PRODUCTS.get(flavor_id)
@@ -107,7 +93,7 @@ class ProxmoxRecipe(DistroRecipe):
             listing.raise_for_status()
             found = re.findall(rf'({re.escape(product)}_(\d+\.\d+-\d+)\.iso)', listing.text)
             if found:
-                fname, ver = max(found, key=lambda pair: _version_key(pair[1]))
+                fname, ver = max(found, key=lambda pair: version_key(pair[1]))
                 return DownloadInfo(version=ver, url=base + fname, filename=fname)
         except Exception as e:
             log.warning(f"[Proxmox] Scrape error: {e}")
@@ -116,18 +102,13 @@ class ProxmoxRecipe(DistroRecipe):
 
 
 class QubesRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="qubes",
-            name="Qubes OS",
-            category="Security & Pentest",
-            description="Security through compartmentalisation: each task runs in its own isolated VM.",
-        )
+    key = "qubes"
+    name = "Qubes OS"
+    description = "Security through compartmentalisation: each task runs in its own isolated VM."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("installer", "Installer", "Full installation image, around 6 GB."),
-        ]
+    FLAVORS = [
+        FlavorInfo("installer", "Installer"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -139,7 +120,7 @@ class QubesRecipe(DistroRecipe):
             # never be served as the current release.
             finals = re.findall(r'(Qubes-R(\d+(?:\.\d+)*)-x86_64\.iso)', listing.text)
             if finals:
-                fname, ver = max(finals, key=lambda pair: _version_key(pair[1]))
+                fname, ver = max(finals, key=lambda pair: version_key(pair[1]))
                 return DownloadInfo(version=ver, url=base + fname, filename=fname)
         except Exception as e:
             log.warning(f"[Qubes OS] Scrape error: {e}")
@@ -155,22 +136,17 @@ def _hrefs(session, url: str, timeout: int = 20) -> List[str]:
 
 
 class FreeBSDRecipe(DistroRecipe):
+    key = "freebsd"
+    name = "FreeBSD"
+    description = "The BSD behind a great deal of networking and storage gear: one coherent base system."
+
     ROOT = "https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/"
 
-    def __init__(self):
-        super().__init__(
-            key="freebsd",
-            name="FreeBSD",
-            category="Server & Enterprise",
-            description="The BSD behind a great deal of networking and storage gear: one coherent base system.",
-        )
-
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("disc1", "Installer (disc1)", "Standard installer with the base system."),
-            FlavorInfo("dvd1", "Installer with packages (dvd1)", "Installer plus a set of packages for offline setup."),
-            FlavorInfo("bootonly", "Network installer (bootonly)", "Smallest image; fetches everything during setup."),
-        ]
+    FLAVORS = [
+        FlavorInfo("disc1", "Installer (disc1)"),
+        FlavorInfo("dvd1", "Installer with packages (dvd1)"),
+        FlavorInfo("bootonly", "Network installer (bootonly)"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         if flavor_id not in ("disc1", "dvd1", "bootonly"):
@@ -178,7 +154,7 @@ class FreeBSDRecipe(DistroRecipe):
         session = self.get_session()
         try:
             releases = sorted({h.strip("/") for h in _hrefs(session, self.ROOT)
-                               if re.fullmatch(r'\d+\.\d+/', h)}, key=_version_key, reverse=True)
+                               if re.fullmatch(r'\d+\.\d+/', h)}, key=version_key, reverse=True)
             for release in releases:
                 # A directory appears for a release while it is still BETA or
                 # RC; only "-RELEASE-" images count.
@@ -200,16 +176,11 @@ class FreeBSDRecipe(DistroRecipe):
 
 
 class IPFireRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="ipfire",
-            name="IPFire",
-            category="Server & Enterprise",
-            description="Hardened firewall and router distribution, configured from a browser.",
-        )
+    key = "ipfire"
+    name = "IPFire"
+    description = "Hardened firewall and router distribution, configured from a browser."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [FlavorInfo("standard", "Installer x86_64", "Firewall installer for 64-bit PCs.")]
+    FLAVORS = [FlavorInfo("standard", "Installer x86_64")]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -224,24 +195,19 @@ class IPFireRecipe(DistroRecipe):
         if not found:
             raise ScrapeError(self.name, "ipfire.org listed no x86_64 installer")
 
-        url, fname, series, core = max(found, key=lambda f: (_version_key(f[2]), int(f[3])))
+        url, fname, series, core = max(found, key=lambda f: (version_key(f[2]), int(f[3])))
         return DownloadInfo(version=f"{series} Core {core}", url=url, filename=fname)
 
 
 class OracleLinuxRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="oracle",
-            name="Oracle Linux",
-            category="Server & Enterprise",
-            description="Oracle's free, RHEL-compatible enterprise distribution.",
-        )
+    key = "oracle"
+    name = "Oracle Linux"
+    description = "Oracle's free, RHEL-compatible enterprise distribution."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("dvd", "Full ISO (DVD)", "Complete offline installation medium."),
-            FlavorInfo("boot", "Boot ISO", "Network installer; fetches packages during setup."),
-        ]
+    FLAVORS = [
+        FlavorInfo("dvd", "Full ISO (DVD)"),
+        FlavorInfo("boot", "Boot ISO"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         if flavor_id not in ("dvd", "boot"):
@@ -263,29 +229,15 @@ class OracleLinuxRecipe(DistroRecipe):
 
 
 class TalosRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="talos",
-            name="Talos Linux",
-            category="Server & Enterprise",
-            description="Minimal, immutable Linux that exists to run Kubernetes, managed entirely by API.",
-        )
+    key = "talos"
+    name = "Talos Linux"
+    description = "Minimal, immutable Linux that exists to run Kubernetes, managed entirely by API."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [FlavorInfo("metal", "Bare metal (amd64)", "Boot image for installing Talos on physical machines.")]
+    FLAVORS = [FlavorInfo("metal", "Bare metal (amd64)")]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        session = self.get_session()
-        try:
-            r = session.get("https://api.github.com/repos/siderolabs/talos/releases/latest", timeout=15)
-            r.raise_for_status()
-            data = r.json()
-        except Exception as e:
-            log.warning(f"[Talos] GitHub API error: {e}")
-            raise ScrapeError(self.name, f"could not read the Talos release feed ({e})")
-
-        tag = str(data.get("tag_name", ""))
-        for asset in data.get("assets", []):
+        tag, assets = self.github_latest("siderolabs/talos")
+        for asset in assets:
             if asset.get("name") == "metal-amd64.iso" and re.fullmatch(r'v\d+(\.\d+)+', tag):
                 # Upstream calls every release's image "metal-amd64.iso". Saved
                 # under that name, nothing on the drive would say which it is.
@@ -295,21 +247,16 @@ class TalosRecipe(DistroRecipe):
 
 
 class CentOSStreamRecipe(DistroRecipe):
+    key = "centos"
+    name = "CentOS Stream"
+    description = "The continuously delivered distribution that the next RHEL minor release is built from."
+
     ROOT = "https://mirror.stream.centos.org/"
 
-    def __init__(self):
-        super().__init__(
-            key="centos",
-            name="CentOS Stream",
-            category="Server & Enterprise",
-            description="The continuously delivered distribution that the next RHEL minor release is built from.",
-        )
-
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("dvd", "DVD", "Full installation medium."),
-            FlavorInfo("boot", "Boot", "Network installer; fetches everything during setup."),
-        ]
+    FLAVORS = [
+        FlavorInfo("dvd", "DVD"),
+        FlavorInfo("boot", "Boot"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         if flavor_id not in ("dvd", "boot"):
@@ -334,7 +281,7 @@ class CentOSStreamRecipe(DistroRecipe):
         if not found:
             raise ScrapeError(self.name, f"no dated {kind} image listed for CentOS Stream {stream}")
 
-        fname, compose = max(found, key=lambda f: _version_key(f[1]))
+        fname, compose = max(found, key=lambda f: version_key(f[1]))
         sha256 = ""
         try:
             sums = session.get(f"{iso_dir}{fname}.SHA256SUM", timeout=20)
@@ -346,21 +293,16 @@ class CentOSStreamRecipe(DistroRecipe):
 
 
 class XCPngRecipe(DistroRecipe):
+    key = "xcpng"
+    name = "XCP-ng"
+    description = "Open-source Xen hypervisor platform, the community successor to XenServer."
+
     ROOT = "https://mirrors.xcp-ng.org/isos/"
 
-    def __init__(self):
-        super().__init__(
-            key="xcpng",
-            name="XCP-ng",
-            category="Server & Enterprise",
-            description="Open-source Xen hypervisor platform, the community successor to XenServer.",
-        )
-
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Installer", "Full offline installer."),
-            FlavorInfo("netinstall", "Network installer", "Small installer that fetches packages during setup."),
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Installer"),
+        FlavorInfo("netinstall", "Network installer"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         if flavor_id not in ("standard", "netinstall"):
@@ -369,7 +311,7 @@ class XCPngRecipe(DistroRecipe):
         session = self.get_session()
         try:
             series = sorted({h.strip("/") for h in _hrefs(session, self.ROOT) if re.fullmatch(r'\d+\.\d+/', h)},
-                            key=_version_key, reverse=True)
+                            key=version_key, reverse=True)
             for release in series:
                 # Refreshed installers of one release are told apart by date,
                 # with a ".2" for a second build on the same day.
@@ -379,7 +321,7 @@ class XCPngRecipe(DistroRecipe):
                     if m:
                         found.append((h, m.group(1), m.group(2)))
                 if found:
-                    fname, ver, build = max(found, key=lambda f: (_version_key(f[1]), _version_key(f[2])))
+                    fname, ver, build = max(found, key=lambda f: (version_key(f[1]), version_key(f[2])))
                     return DownloadInfo(version=f"{ver} ({build})", url=f"{self.ROOT}{release}/{fname}", filename=fname)
         except Exception as e:
             log.warning(f"[XCP-ng] Scrape error: {e}")
@@ -389,29 +331,24 @@ class XCPngRecipe(DistroRecipe):
 
 
 class OpenEulerRecipe(DistroRecipe):
+    key = "openeuler"
+    name = "openEuler"
+    description = ("Enterprise server distribution from the OpenAtom Foundation, with LTS and "
+                   "six-monthly innovation releases.")
+
     ROOT = "https://repo.openeuler.org/"
 
-    def __init__(self):
-        super().__init__(
-            key="openeuler",
-            name="openEuler",
-            category="Server & Enterprise",
-            description="Enterprise server distribution from the OpenAtom Foundation, with LTS and "
-                        "six-monthly innovation releases.",
-        )
-
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("lts", "LTS (DVD)", "Newest long-term support release, with its latest service pack."),
-            FlavorInfo("lts-netinst", "LTS (Network Install)", "Small LTS installer that fetches packages during setup."),
-            FlavorInfo("innovation", "Innovation release (DVD)", "Newest six-monthly release."),
-            FlavorInfo("innovation-netinst", "Innovation release (Network Install)", "Small installer for the newest release."),
-        ]
+    FLAVORS = [
+        FlavorInfo("lts", "LTS (DVD)"),
+        FlavorInfo("lts-netinst", "LTS (Network Install)"),
+        FlavorInfo("innovation", "Innovation release (DVD)"),
+        FlavorInfo("innovation-netinst", "Innovation release (Network Install)"),
+    ]
 
     @staticmethod
     def _rank(release: str) -> tuple:
         """24.03-LTS < 24.03-LTS-SP1 < 24.09."""
-        numbers = _version_key(release.split("-LTS")[0])
+        numbers = version_key(release.split("-LTS")[0])
         sp = re.search(r'SP(\d+)', release)
         return numbers + (int(sp.group(1)) if sp else 0,)
 

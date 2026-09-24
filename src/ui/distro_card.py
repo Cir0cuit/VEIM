@@ -10,8 +10,7 @@ from PySide6.QtWidgets import QProgressBar
 from src.core.inventory import InventoryItem
 from src.core.downloader import DownloadTask
 from src.core.recipe_base import is_older
-from src.ui.components import Row, Pill, make_button, fmt_eta
-from src.ui.theme import ThemeColors
+from src.ui.components import Row, Pill, make_button, restyle, show_progress
 
 
 def human_size(size_bytes: int) -> str:
@@ -49,12 +48,8 @@ class DistroCard(Row):
         super().__init__(parent)
         self.item = item
         self.on_check_update = on_check_update
-        self.on_download = on_download
-        self.on_remove = on_remove
-        self.on_cancel = on_cancel or (lambda item, card: None)
 
         self._latest_ver = ""       # the last check's answer, "" before any
-        self._latest_url = ""
         self._checking = False
         self._downloading = False
         # How the last transfer on this row ended, as (pill text, tone), and
@@ -70,13 +65,14 @@ class DistroCard(Row):
         self.btn_check = make_button("Check", "ghost", self.start_check)
         self.add_action(self.btn_check)
 
-        self.btn_update = make_button("Update", "primary", self._handle_download)
+        self.btn_update = make_button("Update", "primary", lambda: on_download(self.item, self))
         self.add_action(self.btn_update)
 
-        self.btn_remove = make_button("Remove", "danger", self._handle_remove)
+        self.btn_remove = make_button("Remove", "danger", lambda: on_remove(self.item, self))
         self.add_action(self.btn_remove)
 
-        self.btn_cancel = make_button("Cancel", "danger", self._handle_cancel)
+        self.btn_cancel = make_button("Cancel", "danger",
+                                      lambda: on_cancel and on_cancel(self.item, self))
         self.add_action(self.btn_cancel)
 
         self.progress = QProgressBar()
@@ -135,21 +131,11 @@ class DistroCard(Row):
         self._render()
         self.on_check_update(self.item, self)
 
-    def _handle_download(self):
-        self.on_download(self.item, self)
-
-    def _handle_remove(self):
-        self.on_remove(self.item, self)
-
-    def _handle_cancel(self):
-        self.on_cancel(self.item, self)
-
     # -- state ------------------------------------------------------------
 
     def set_status_result(self, latest_ver: str, download_url: str):
         self._checking = False
         self._latest_ver = str(latest_ver)
-        self._latest_url = download_url
         self._render()
 
     def begin_download(self):
@@ -161,26 +147,8 @@ class DistroCard(Row):
         self._render()
 
     def update_progress(self, task: DownloadTask):
-        if not self._downloading:
-            return
-        if task.total_bytes > 0:
-            pct = int(task.downloaded_bytes / task.total_bytes * 100)
-            self.progress.setRange(0, 100)
-            self.progress.setValue(pct)
-            if task.note:
-                # Between attempts: what is being waited for, not a speed of 0.
-                self.meta.setText(f"{task.note}  ·  {pct_text(task)}")
-                return
-            self.meta.setText(
-                f"Downloading {pct}%  ·  {task.speed_mbps:.1f} MB/s  ·  "
-                f"{pct_text(task)}  ·  {fmt_eta(task.eta_seconds)} left"
-            )
-        else:
-            # Unknown total: show an indeterminate bar rather than a fake 0%.
-            self.progress.setRange(0, 0)
-            self.meta.setText(
-                f"Downloading  ·  {task.speed_mbps:.1f} MB/s  ·  {pct_text(task)}"
-            )
+        if self._downloading:
+            show_progress(self.progress, self.meta, task)
 
     def end_download(self, success: bool, msg: str = "", version: str = ""):
         """Back to an ordinary row. A cancelled transfer passes no message."""
@@ -199,7 +167,7 @@ class DistroCard(Row):
 
     def _render(self):
         busy = self._downloading
-        self._set_name(self, "rowActive" if busy else "row")
+        restyle(self, "rowActive" if busy else "row")
 
         self.progress.setVisible(busy)
         self.btn_cancel.setVisible(busy)
@@ -217,10 +185,10 @@ class DistroCard(Row):
 
         if busy:
             # begin_download() and update_progress() own the meta line.
-            self._set_name(self.meta, "rowMeta")
+            restyle(self.meta, "rowMeta")
             self.meta.setWordWrap(False)
             return
-        self._set_name(self.meta, "errorText" if self._error else "rowMeta")
+        restyle(self.meta, "errorText" if self._error else "rowMeta")
         self.meta.setWordWrap(bool(self._error))
         if self._error:
             self.meta.setText(self._error)
@@ -242,22 +210,3 @@ class DistroCard(Row):
         if self.is_ahead:
             return f"Newer than {self._latest_ver}", "neutral"
         return "Up to date", "ok"
-
-    @staticmethod
-    def _set_name(widget, name: str):
-        if widget.objectName() == name:
-            return
-        widget.setObjectName(name)
-        widget.style().unpolish(widget)
-        widget.style().polish(widget)
-
-    def apply_theme(self, colors: ThemeColors = None):
-        return
-
-
-def pct_text(task: DownloadTask) -> str:
-    if task.total_bytes <= 0:
-        return f"{task.downloaded_bytes / (1024 ** 2):.0f} MB"
-    done = task.downloaded_bytes / (1024 ** 2)
-    total = task.total_bytes / (1024 ** 2)
-    return f"{done:.0f} / {total:.0f} MB"

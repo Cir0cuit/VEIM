@@ -27,11 +27,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
-from packaging.version import InvalidVersion, Version
 
 from src import __version__
 from src.core import paths
 from src.core.logger import log
+from src.core.recipe_base import is_older
 
 REPO = "Cir0cuit/VEIM"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -50,7 +50,6 @@ UNREACHABLE = "unreachable"
 class Release:
     version: str
     url: str
-    notes: str
 
 
 @dataclass(frozen=True)
@@ -85,15 +84,18 @@ def _write_state(state: dict) -> None:
 
 
 def _newer(candidate: str, installed: str) -> bool:
-    try:
-        return Version(candidate) > Version(installed)
-    except InvalidVersion:
-        # A tag that is not a version number is not something to compare.
-        return False
+    # Releases are plain X.Y.Z (release.yml refuses anything else), so the
+    # numbers are the whole comparison. A tag with none ("nightly") is never newer.
+    return is_older(installed, candidate)
 
 
-def _fetch(installed: str) -> CheckResult:
-    """Ask GitHub what the latest release is and record the answer."""
+def check_now(installed: str = __version__) -> CheckResult:
+    """Ask GitHub what the latest release is and record the answer.
+
+    A check somebody asked for, so it always goes to the network: answering a
+    button press with yesterday's cached result would make the button look
+    broken the one time it matters.
+    """
     try:
         response = requests.get(
             LATEST_API,
@@ -109,19 +111,16 @@ def _fetch(installed: str) -> CheckResult:
 
     tag = str(payload.get("tag_name", "")).lstrip("vV")
     url = payload.get("html_url") or RELEASES_PAGE
-    notes = (payload.get("body") or "").strip()
 
     state = _read_state()
-    state["last_check"] = time.time()
-    state["pending"] = {"version": tag, "url": url, "notes": notes[:2000]}
+    state["pending"] = {"version": tag, "url": url}
     _write_state(state)
 
     if not _newer(tag, installed):
         return CheckResult(UP_TO_DATE, latest=tag)
 
     log.info(f"VEIM {tag} is available (running {installed})")
-    return CheckResult(UPDATE_AVAILABLE, latest=tag,
-                       release=Release(tag, url, notes))
+    return CheckResult(UPDATE_AVAILABLE, latest=tag, release=Release(tag, url))
 
 
 def _pending_release(state: dict, installed: str) -> Optional[Release]:
@@ -133,9 +132,7 @@ def _pending_release(state: dict, installed: str) -> Optional[Release]:
     pending = state.get("pending") or {}
     if not _newer(pending.get("version", ""), installed):
         return None
-    return Release(pending["version"],
-                   pending.get("url") or RELEASES_PAGE,
-                   pending.get("notes", ""))
+    return Release(pending["version"], pending.get("url") or RELEASES_PAGE)
 
 
 def check(installed: str = __version__) -> Optional[Release]:
@@ -146,19 +143,10 @@ def check(installed: str = __version__) -> Optional[Release]:
     leaves the app working exactly as it was, which is the whole point of it
     being optional.
     """
-    result = _fetch(installed)
+    result = check_now(installed)
     if result.state == UNREACHABLE:
         return _pending_release(_read_state(), installed)
     return result.release
-
-
-def check_now(installed: str = __version__) -> CheckResult:
-    """A check somebody asked for, so it always goes to the network.
-
-    Answering a button press with yesterday's cached result would make the
-    button look broken the one time it matters.
-    """
-    return _fetch(installed)
 
 
 def skip_version(version: str) -> None:

@@ -4,7 +4,6 @@ The point of the dialog over the old banner is that "no" sticks. These check
 that each way of saying no is recorded, and that the next automatic check
 honours it.
 """
-import threading
 import time
 
 import pytest
@@ -15,17 +14,9 @@ from src.core import app_update
 from src.core.app_update import Release
 from src.ui import update_prompt as up
 from src.ui.update_prompt import UpdateNotifier, UpdatePrompt
+from tests.test_update_button import _run_worker_inline
 
-RELEASE = Release("2.0.0", "https://example.invalid/releases/v2.0.0",
-                  "Fix the drive scan\n\nSquashed commit messages nobody asked for.")
-
-
-@pytest.fixture
-def state_file(tmp_path, monkeypatch):
-    """Every answer is written here; the next check reads it back."""
-    path = tmp_path / "update_check.json"
-    monkeypatch.setattr(app_update.paths, "state_path", lambda _name: str(path))
-    return path
+RELEASE = Release("2.0.0", "https://example.invalid/releases/v2.0.0")
 
 
 @pytest.fixture
@@ -52,7 +43,6 @@ def test_it_summarises_rather_than_reciting_the_commit_log(prompt):
     texts = [label.text() for label in prompt.findChildren(up.QLabel)]
 
     assert up.SUMMARY in texts
-    assert not any("Squashed commit messages" in text for text in texts)
 
 
 # ------------------------------------------------------------------- answering
@@ -206,14 +196,3 @@ def _capture_prompts(monkeypatch):
 
     monkeypatch.setattr(up, "UpdatePrompt", _Recorded)
     return raised
-
-
-def _run_worker_inline(monkeypatch):
-    class _Immediate:
-        def __init__(self, target, daemon=False):
-            self._target = target
-
-        def start(self):
-            self._target()
-
-    monkeypatch.setattr(threading, "Thread", _Immediate)

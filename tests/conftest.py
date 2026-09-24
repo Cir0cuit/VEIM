@@ -1,31 +1,25 @@
-"""Shared test fixtures.
-
-Puts the repository root on sys.path so `src.*` imports resolve when pytest is
-run from anywhere. Without this every test dies with ModuleNotFoundError.
-"""
+"""Shared test fixtures."""
 import os
-import sys
-import tempfile
-import shutil
 
 import pytest
-
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
 
 # Qt needs an offscreen platform in headless CI.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 @pytest.fixture
-def drive_root():
+def state_file(tmp_path, monkeypatch):
+    """Every update-check answer is written here; the next check reads it back."""
+    from src.core import app_update
+    path = tmp_path / "update_check.json"
+    monkeypatch.setattr(app_update.paths, "state_path", lambda _name: str(path))
+    return path
+
+
+@pytest.fixture
+def drive_root(tmp_path):
     """An empty throwaway directory standing in for a mounted Ventoy drive."""
-    path = tempfile.mkdtemp(prefix="veim_test_")
-    try:
-        yield path
-    finally:
-        shutil.rmtree(path, ignore_errors=True)
+    return str(tmp_path)
 
 
 @pytest.fixture

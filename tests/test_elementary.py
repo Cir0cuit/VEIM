@@ -8,26 +8,11 @@ import pytest
 
 from src.core.recipe_base import ScrapeError
 from src.recipes.community_desktop import ElementaryRecipe
-
-
-class _Resp:
-    status_code = 200
-
-    def __init__(self, text):
-        self.text = text
+from tests.test_stale_recipes import _with
 
 
 def _recipe(monkeypatch, page):
-    recipe = ElementaryRecipe()
-
-    class _Session:
-        headers = {}
-
-        def get(self, *a, **kw):
-            return _Resp(page)
-
-    monkeypatch.setattr(recipe, "get_session", lambda: _Session())
-    return recipe
+    return _with(monkeypatch, ElementaryRecipe(), {"https://elementary.io/": page})[0]
 
 
 def test_version_comes_from_the_download_link(monkeypatch):

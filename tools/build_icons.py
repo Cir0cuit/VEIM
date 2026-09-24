@@ -4,7 +4,6 @@
 Run after editing the SVG:  python tools/build_icons.py
 """
 import os
-import struct
 import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -16,13 +15,6 @@ BRANDING = os.path.join(BASE, "src", "assets", "branding")
 SVG = os.path.join(BRANDING, "veim.svg")
 PNG_SIZES = (16, 24, 32, 48, 64, 128, 256, 512, 1024)
 ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
-
-# macOS names each slot by pixel size; only these are read from an .icns.
-ICNS_SLOTS = {
-    "icp4": 16, "icp5": 32, "ic11": 32, "ic12": 64,
-    "ic07": 128, "ic13": 256, "ic08": 256, "ic14": 512,
-    "ic09": 512, "ic10": 1024,
-}
 
 
 def render_pngs():
@@ -66,17 +58,13 @@ def build_ico(paths):
 
 
 def build_icns(paths):
-    """Write an .icns by hand: Pillow only encodes them on macOS."""
-    entries = []
-    for slot, size in ICNS_SLOTS.items():
-        with open(paths[size], "rb") as fh:
-            data = fh.read()
-        entries.append(slot.encode("ascii") + struct.pack(">I", len(data) + 8) + data)
+    from PIL import Image
 
-    body = b"".join(entries)
+    # Pillow fills the ic07-ic14 slots, 32 to 1024 px, from the frame of each
+    # width; macOS scales the 16 px icon down from the 32.
     out = os.path.join(BRANDING, "veim.icns")
-    with open(out, "wb") as fh:
-        fh.write(b"icns" + struct.pack(">I", len(body) + 8) + body)
+    Image.open(paths[1024]).save(
+        out, append_images=[Image.open(paths[s]) for s in (32, 64, 128, 256, 512)])
     return out
 
 

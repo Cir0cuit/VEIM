@@ -159,8 +159,15 @@ def test_extract_refuses_an_archive_without_exactly_one_iso(tmp_path):
         extract_iso_from_zip(str(two), str(tmp_path / "out.iso"))
 
 
-def test_archive_download_promotes_the_extracted_iso(tmp_path, monkeypatch):
-    """End to end: the archive is fetched, unpacked, and the .zip discarded."""
+@pytest.mark.parametrize("reinstall", [False, True], ids=["new", "over-read-only"])
+def test_archive_download_promotes_the_extracted_iso(tmp_path, reinstall):
+    """End to end: the archive is fetched, unpacked, and the .zip discarded.
+
+    A reinstall replaces the old image even when it is read-only (a FAT
+    read-only attribute reads as mode 0444 on Linux), as a raw ISO's does.
+    """
+    if reinstall and os.name != "posix":
+        pytest.skip("Windows cannot replace a read-only file either way")
     import io
     import zipfile
     import threading
@@ -184,6 +191,9 @@ def test_archive_download_promotes_the_extracted_iso(tmp_path, monkeypatch):
         def get(self, *a, **kw): return FakeResponse()
 
     dest = tmp_path / "memtest86plus-8.10-x86_64.iso"
+    if reinstall:
+        dest.write_bytes(b"OLD-ISO")
+        dest.chmod(0o444)
     done = threading.Event()
     outcome = {}
 

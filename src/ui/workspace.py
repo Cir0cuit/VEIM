@@ -35,9 +35,9 @@ class Workspace(QWidget):
         self.stack = QStackedWidget()
         layout.addWidget(self.stack, 1)
 
-        self.library = DashboardView(drive_path=drive_path, on_change_drive=on_change_drive)
+        self.library = DashboardView(drive_path=drive_path)
         self.catalog = CatalogView(
-            on_install=self._install,
+            on_install=self.library._on_catalog_install_request,
             installed_lookup=self.library.installed_flavors,
             on_cancel=self._cancel,
         )
@@ -73,17 +73,6 @@ class Workspace(QWidget):
         else:
             self.stack.setCurrentWidget(self.library)
         self.sidebar.select(page)
-
-    def _install(self, recipe, flavor_id: str):
-        """Queue a download and stay where the user is.
-
-        This used to switch to the Installed page, which threw you out of the
-        catalog every time you queued something - so picking three distributions
-        meant navigating back twice. The catalog row reports its own progress
-        instead, and the Installed page still lists the transfer for anyone who
-        goes looking.
-        """
-        self.library._on_catalog_install_request(recipe, flavor_id)
 
     def _cancel(self, recipe, flavor_id: str):
         """Stop a transfer from the row that started it."""

@@ -1,17 +1,24 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import List
 import re
 import requests
-import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from src.core.logger import log
 
 # A server error is a hiccup, not an answer. Two more tries, a second or two
 # apart, cover the kind cdimage.debian.org has; then it is refused.
 SERVER_ERROR_STATUSES = (500, 502, 503, 504)
 SERVER_ERROR_RETRIES = 2
 SERVER_ERROR_BACKOFF = 1.0
+
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
+
+# The path of each file a SourceForge RSS feed lists, newest first.
+SOURCEFORGE_PATHS = r'<title><!\[CDATA\[(/[^\]]+)\]\]></title>'
 
 
 def _refuse_server_errors(response, *args, **kwargs):
@@ -47,9 +54,6 @@ class DownloadInfo:
     url: str
     sha256: str = ""
     filename: str = ""
-    size_bytes: int = 0
-    release_date: str = ""
-    notes: str = ""
     # "zip" when upstream publishes the ISO only inside an archive, which
     # the downloader unpacks - Ventoy cannot boot a .zip.
     archive: str = ""
@@ -76,6 +80,12 @@ def clean_version(version: str) -> str:
     return v or "Unknown"
 
 
+def version_key(version: str) -> tuple:
+    """Sort key made of the numbers in a version, which ranks 10 above 9 - a
+    string sort gets that backwards."""
+    return tuple(int(n) for n in re.findall(r'\d+', str(version)))
+
+
 def is_older(candidate: str, installed: str) -> bool:
     """True when `candidate` is recognisably an earlier release than `installed`.
 
@@ -85,34 +95,79 @@ def is_older(candidate: str, installed: str) -> bool:
     in them; when that settles nothing ("Tumbleweed", "Stable"), the answer is
     False and the caller is left with plain inequality.
     """
-    ours = tuple(int(n) for n in re.findall(r'\d+', str(installed)))
-    theirs = tuple(int(n) for n in re.findall(r'\d+', str(candidate)))
+    ours, theirs = version_key(installed), version_key(candidate)
     return bool(ours) and bool(theirs) and theirs < ours
+
+
+class _Page(HTMLParser):
+    """The href of every link on a page, and the text in each table row's cells."""
+
+    def __init__(self):
+        super().__init__()
+        self.hrefs, self.rows, self._in_cell = [], [], False
+
+    def handle_starttag(self, tag, attrs):
+        href = dict(attrs).get("href")
+        if tag == "a" and href is not None:
+            self.hrefs.append(href)
+        elif tag == "tr":
+            self.rows.append([])
+            self._in_cell = False
+        elif tag == "td" and self.rows:
+            self.rows[-1].append("")
+            self._in_cell = True
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "tr"):
+            self._in_cell = False
+
+    def handle_data(self, data):
+        if self._in_cell:
+            self.rows[-1][-1] += data
+
+
+def _parse(html: str) -> _Page:
+    page = _Page()
+    page.feed(html)
+    page.close()
+    return page
+
+
+def hrefs(html: str) -> List[str]:
+    """Every link's href, in page order, with entities decoded."""
+    return _parse(html).hrefs
+
+
+def table_rows(html: str) -> List[List[str]]:
+    """The stripped text of each table row's cells."""
+    return [[cell.strip() for cell in row] for row in _parse(html).rows]
+
+
+def sourceforge_rss(session, project: str, query: str) -> str:
+    """A SourceForge project's RSS feed of its newest files, newest first."""
+    r = session.get(f"https://sourceforge.net/projects/{project}/rss?{query}",
+                    timeout=25, headers={"User-Agent": "curl/8.4.0"})
+    r.raise_for_status()
+    return r.text
 
 
 @dataclass
 class FlavorInfo:
     id: str
     name: str
-    description: str = ""
-    arch: str = "x86_64"
 
 class DistroRecipe(ABC):
     """
     Abstract base recipe for Linux distributions and bootable utilities.
+
+    A recipe declares its key, name, description and FLAVORS; the registry
+    gives it its category.
     """
-    def __init__(self, key: str, name: str, category: str, description: str = ""):
-        self.key = key
-        self.name = name
-        self.category = category  # e.g. "Popular", "Rolling", "Security", "Rescue", "Lightweight"
-        self.description = description
-        
-        self.user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0",
-            "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.7; rv:130.0) Gecko/20100101 Firefox/130.0",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-        ]
+    key: str
+    name: str
+    description: str
+    FLAVORS: List[FlavorInfo] = []
+    category = ""
 
     def get_session(self) -> requests.Session:
         """A session for reading release pages.
@@ -124,9 +179,8 @@ class DistroRecipe(ABC):
         answer several recipes read ("that release has no images yet").
         """
         session = requests.Session()
-        ua = random.choice(self.user_agents)
         session.headers.update({
-            "User-Agent": ua,
+            "User-Agent": BROWSER_UA,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.7",
             "DNT": "1",
@@ -141,10 +195,20 @@ class DistroRecipe(ABC):
         session.hooks["response"].append(_refuse_server_errors)
         return session
 
-    @abstractmethod
+    def github_latest(self, repo: str):
+        """(tag, assets) of a GitHub project's latest release."""
+        try:
+            r = self.get_session().get(f"https://api.github.com/repos/{repo}/releases/latest", timeout=15)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            log.warning(f"[{self.name}] GitHub API error: {e}")
+            raise ScrapeError(self.name, f"could not read the {self.name} release feed ({e})")
+        return str(data.get("tag_name", "")), data.get("assets", [])
+
     def get_flavors(self) -> List[FlavorInfo]:
         """Return list of supported flavors/variants for this distro."""
-        pass
+        return list(self.FLAVORS)
 
     @abstractmethod
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:

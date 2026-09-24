@@ -1,20 +1,14 @@
-from typing import List
 from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
 from src.core.logger import log
 
 class ArchRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="arch",
-            name="Arch Linux",
-            category="Rolling Release",
-            description="A lightweight, flexible, and bleeding-edge rolling release distribution."
-        )
+    key = "arch"
+    name = "Arch Linux"
+    description = "A lightweight, flexible, and bleeding-edge rolling release distribution."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Standard ISO", "Complete official Arch installation media.")
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Standard ISO")
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()

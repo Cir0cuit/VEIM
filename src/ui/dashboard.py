@@ -8,7 +8,7 @@ drive path ran underneath the buttons and got clipped - is gone.
 import os
 import threading
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, List
+from typing import Dict, Optional, List
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QScrollArea, QMessageBox, QDialog
@@ -21,7 +21,6 @@ from src.recipes.registry import registry
 from src.core.recipe_base import DistroRecipe, ScrapeError
 from src.core.downloader import DownloadTask, free_for_download, probe_size, reserved_bytes
 from src.core.logger import log
-from src.ui.theme import theme_manager, ThemeColors
 from src.ui.components import make_button, EmptyState
 from src.ui.distro_card import DistroCard
 from src.ui.downloading_card import DownloadingCard
@@ -79,10 +78,9 @@ class DashboardView(QWidget):
     download_progress = Signal(str, str, int, float, int)  # key, flavor, pct, MB/s, eta
     download_ended = Signal(str, str, bool, str)           # key, flavor, ok, message
 
-    def __init__(self, drive_path: str, on_change_drive: Callable[[], None], parent=None):
+    def __init__(self, drive_path: str, parent=None):
         super().__init__(parent)
         self.drive_path = drive_path
-        self.on_change_drive = on_change_drive
 
         self.inventory_mgr = InventoryManager(drive_path)
         self.cards: Dict[str, DistroCard] = {}
@@ -111,7 +109,6 @@ class DashboardView(QWidget):
 
         self._build_ui()
         self.refresh_installed_list()
-        theme_manager.add_listener(self.apply_theme)
 
     # ------------------------------------------------------------------ UI
 
@@ -449,9 +446,6 @@ class DashboardView(QWidget):
         return {i.flavor_id for i in self.inventory_mgr.get_all_items() if i.key == key}
 
     # ------------------------------------------------------------ download
-
-    def open_catalog(self):
-        self.browse_catalog.emit()
 
     def _on_catalog_install_request(self, recipe: DistroRecipe, flavor_id: str,
                                     ck: str = ""):
@@ -799,9 +793,6 @@ class DashboardView(QWidget):
         self._forget_reclaimed(ck)
         self.refresh_installed_list()
 
-    def _dismiss_download(self, ck: str):
-        self._cancel_download(ck)
-
     # ------------------------------------------------------------ actions
 
     def _key_of(self, card: DistroCard) -> str:
@@ -884,7 +875,3 @@ class DashboardView(QWidget):
             # looking the record up by those removed the other one's file.
             self.inventory_mgr.remove_entry(self._key_of(card), delete_file=True)
             self.refresh_installed_list()
-
-    def apply_theme(self, colors: ThemeColors = None):
-        """Styling comes from the global stylesheet; nothing to repaint here."""
-        return

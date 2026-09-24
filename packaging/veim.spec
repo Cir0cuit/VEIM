@@ -24,11 +24,9 @@ datas = [
 # Qt ships far more than a desktop form needs, and every module left in costs
 # tens of megabytes in the installer.
 excludes = [
-    "tkinter", "unittest", "pydoc_data", "pytest", "PIL.ImageQt",
-    # Pulled in by hooks for optional paths this app never takes: Pillow can
-    # use numpy, BeautifulSoup can use lxml. Every recipe parses with the
-    # stdlib "html.parser", so none of it ships.
-    "numpy", "lxml", "cryptography", "yaml", "scipy", "pandas", "matplotlib",
+    "tkinter", "unittest", "pydoc_data", "pytest",
+    # Pulled in by hooks for optional paths this app never takes.
+    "numpy", "cryptography", "yaml", "scipy", "pandas", "matplotlib",
     "IPython", "docutils", "jinja2",
     "PySide6.Qt3DAnimation", "PySide6.Qt3DCore", "PySide6.Qt3DExtras",
     "PySide6.Qt3DInput", "PySide6.Qt3DLogic", "PySide6.Qt3DRender",
@@ -49,14 +47,8 @@ excludes = [
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
-    pathex=[ROOT],
-    binaries=[],
     datas=datas,
-    hiddenimports=[],
-    hookspath=[],
-    runtime_hooks=[],
     excludes=excludes,
-    noarchive=False,
 )
 
 pyz = PYZ(a.pure)
@@ -64,19 +56,9 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
     exclude_binaries=True,
     name="VEIM",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
     console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
     icon=os.path.join(BRANDING, "veim.ico" if sys.platform == "win32" else "veim.icns"),
 )
 
@@ -84,9 +66,6 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
     name="VEIM",
 )
 

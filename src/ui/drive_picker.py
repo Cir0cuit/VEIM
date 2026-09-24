@@ -17,7 +17,7 @@ from src import __version__
 from src.core.drive import DriveInfo, DriveDetector
 from src.core.logger import log
 from src.ui.components import CapacityBar, Pill, make_button, EmptyState
-from src.ui.theme import theme_manager, ThemeButton
+from src.ui.theme import ThemeButton
 from src.ui.update_button import UpdateCheckButton
 
 
@@ -92,10 +92,6 @@ class DriveCard(QFrame):
             self._choose()
         super().mouseReleaseEvent(event)
 
-    def apply_theme(self, *_):
-        """Kept for compatibility; styling comes from the global stylesheet."""
-        return
-
 
 class DrivePickerView(QWidget):
     """Full-window drive chooser shown before the main UI."""
@@ -105,7 +101,6 @@ class DrivePickerView(QWidget):
         self.on_drive_selected = on_drive_selected
         self._build_ui()
         self.refresh()
-        theme_manager.add_listener(self.apply_theme)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -230,6 +225,3 @@ class DrivePickerView(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Select Ventoy drive or folder")
         if path:
             self.on_drive_selected(path)
-
-    def apply_theme(self, *_):
-        return

@@ -1,12 +1,7 @@
 import re
 from typing import List
-from bs4 import BeautifulSoup
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
 from src.core.logger import log
-
-def _numeric(version: str) -> tuple:
-    """Sort key for dotted versions. As strings, "10.0.9" outranks "10.0.12"."""
-    return tuple(int(part) for part in version.split("."))
 
 
 def _links(session, url: str) -> List[str]:
@@ -14,24 +9,19 @@ def _links(session, url: str) -> List[str]:
     r = session.get(url, timeout=10)
     if r.status_code != 200:
         return []
-    return [a["href"] for a in BeautifulSoup(r.text, "html.parser").find_all("a", href=True)]
+    return hrefs(r.text)
 
 
 class PuppyRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="puppy",
-            name="Puppy Linux",
-            category="Lightweight",
-            description="Extraordinarily fast, portable Linux designed to run entirely in RAM."
-        )
+    key = "puppy"
+    name = "Puppy Linux"
+    description = "Extraordinarily fast, portable Linux designed to run entirely in RAM."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("bookworm", "BookwormPup64", "Built using Debian 12 Bookworm binary packages."),
-            FlavorInfo("fossa", "FossaPup64", "Built using Ubuntu 20.04 Focal Fossa binary packages."),
-            FlavorInfo("trixie", "TrixiePup64", "Modern release built using Debian 13 Trixie.")
-        ]
+    FLAVORS = [
+        FlavorInfo("bookworm", "BookwormPup64"),
+        FlavorInfo("fossa", "FossaPup64"),
+        FlavorInfo("trixie", "TrixiePup64")
+    ]
 
     # flavor -> (folder holding one subfolder per release, path inside a release).
     # The release folder itself is looked up: naming it here pinned these two
@@ -44,7 +34,7 @@ class PuppyRecipe(DistroRecipe):
     def _newest_release_dir(self, session, parent_url: str) -> str:
         releases = [h.rstrip("/") for h in _links(session, parent_url)
                     if re.fullmatch(r'\d+(?:\.\d+)+/', h)]
-        return max(releases, key=_numeric) + "/" if releases else ""
+        return max(releases, key=version_key) + "/" if releases else ""
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -70,7 +60,7 @@ class PuppyRecipe(DistroRecipe):
                 for href in _links(session, full_dir):
                     m = re.search(r'[\-_](\d+(?:\.\d+)+)\.iso$', href)
                     if m and "devx" not in href.lower():
-                        found.append((_numeric(m.group(1)), m.group(1), href))
+                        found.append((version_key(m.group(1)), m.group(1), href))
                 if found:
                     _, ver, best = max(found)
                     return DownloadInfo(version=ver, url=full_dir + best, filename=best)
@@ -80,24 +70,19 @@ class PuppyRecipe(DistroRecipe):
         raise ScrapeError(self.name, f"no current {target} build listed on the Puppy mirrors")
 
 class TinyCoreRecipe(DistroRecipe):
+    key = "tinycore"
+    name = "Tiny Core Linux"
+    description = "Ultra-minimalist modular desktop system starting at just 16 MB."
+
     SITE = "http://tinycorelinux.net/"
 
-    def __init__(self):
-        super().__init__(
-            key="tinycore",
-            name="Tiny Core Linux",
-            category="Lightweight",
-            description="Ultra-minimalist modular desktop system starting at just 16 MB."
-        )
-
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("coreplus", "CorePlus (x86)", "Complete installation image with wireless tools and window managers."),
-            FlavorInfo("tinycore", "TinyCore (x86)", "Minimalist GUI desktop experience (16 MB)."),
-            FlavorInfo("corepure64", "CorePure64 (x86_64)", "Pure 64-bit Core Linux system."),
-            FlavorInfo("tinycorepure64", "TinyCorePure64 (x86_64)", "64-bit Core with the minimalist GUI desktop."),
-            FlavorInfo("core", "Core (x86)", "Command line only: the 17 MB base everything else builds on."),
-        ]
+    FLAVORS = [
+        FlavorInfo("coreplus", "CorePlus (x86)"),
+        FlavorInfo("tinycore", "TinyCore (x86)"),
+        FlavorInfo("corepure64", "CorePure64 (x86_64)"),
+        FlavorInfo("tinycorepure64", "TinyCorePure64 (x86_64)"),
+        FlavorInfo("core", "Core (x86)"),
+    ]
 
     # flavor -> (architecture folder, image name)
     _IMAGES = {
@@ -137,7 +122,7 @@ class TinyCoreRecipe(DistroRecipe):
                 if m:
                     versions[m.group(1)] = href
             if versions:
-                ver = max(versions, key=_numeric)
+                ver = max(versions, key=version_key)
                 return DownloadInfo(version=ver, url=base_url + versions[ver], filename=versions[ver])
         except ScrapeError:
             raise
@@ -147,21 +132,16 @@ class TinyCoreRecipe(DistroRecipe):
         raise ScrapeError(self.name, f"no current {image} image listed in the Tiny Core archive")
 
 class AlpineRecipe(DistroRecipe):
-    def __init__(self):
-        super().__init__(
-            key="alpine",
-            name="Alpine Linux",
-            category="Lightweight",
-            description="Security-oriented, ultra-lightweight Linux distribution based on musl and BusyBox."
-        )
+    key = "alpine"
+    name = "Alpine Linux"
+    description = "Security-oriented, ultra-lightweight Linux distribution based on musl and BusyBox."
 
-    def get_flavors(self) -> List[FlavorInfo]:
-        return [
-            FlavorInfo("standard", "Standard x86_64", "General purpose live and installation media."),
-            FlavorInfo("extended", "Extended x86_64", "Includes additional packages for offline installs."),
-            FlavorInfo("virt", "Virtual x86_64", "Slimmed-down kernel, for virtual machines."),
-            FlavorInfo("xen", "Xen x86_64", "With Xen hypervisor support, for a dom0."),
-        ]
+    FLAVORS = [
+        FlavorInfo("standard", "Standard x86_64"),
+        FlavorInfo("extended", "Extended x86_64"),
+        FlavorInfo("virt", "Virtual x86_64"),
+        FlavorInfo("xen", "Xen x86_64"),
+    ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
@@ -172,9 +152,7 @@ class AlpineRecipe(DistroRecipe):
         try:
             r = session.get("https://alpinelinux.org/downloads/", timeout=10)
             if r.status_code == 200:
-                soup = BeautifulSoup(r.text, "html.parser")
-                for a in soup.find_all("a", href=True):
-                    href = a["href"]
+                for href in hrefs(r.text):
                     if target in href and href.endswith("x86_64.iso"):
                         m = re.search(rf'{target}-([\d\.]+)-x86_64\.iso', href)
                         ver = m.group(1) if m else "Latest"

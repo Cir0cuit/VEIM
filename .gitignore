@@ -18,12 +18,6 @@ veim.log
 # committed; this is the scratch directory the capture tool writes to.
 screenshots/
 
-# The rendered distribution logos in src/assets/icons/ are committed, so a
-# fresh install shows every row's icon before any network call. Regenerate them
-# with tools/fetch_icons.py.
-# This marker is runtime state, written next to a user's own icon cache.
-src/assets/icons/.cache_format
-
 # Local knowledge-graph output
 graphify-out/
 
