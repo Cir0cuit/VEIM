@@ -18,7 +18,7 @@ COLOR_FIELDS = [
     "bg_main", "bg_card", "bg_card_hover", "bg_input", "border", "border_focus",
     "text_primary", "text_secondary", "text_muted", "accent", "accent_hover",
     "accent_text", "success", "warning", "danger", "info",
-    "bg_sidebar", "bg_elevated", "row_hover", "accent_soft", "icon_chip",
+    "bg_sidebar", "bg_elevated", "row_hover", "accent_soft", "accent_fg", "icon_chip",
     "icon_plate",
 ]
 
@@ -68,10 +68,31 @@ def test_primary_button_label_is_readable(name):
 
 
 @pytest.mark.parametrize("name", list(THEMES))
-def test_muted_text_stays_distinguishable(name):
+def test_accent_text_is_readable(name):
+    """accent_fg labels every tonal button, on accent_soft, and the selected
+    filter chip; the brand mark sits on the sidebar."""
     theme = THEMES[name]
-    ratio = contrast(theme.text_muted, theme.bg_card)
-    assert ratio >= 2.5, f"{name}: text_muted on bg_card is only {ratio:.1f}:1"
+    for surface in ("accent_soft", "bg_main", "bg_sidebar"):
+        ratio = contrast(theme.accent_fg, getattr(theme, surface))
+        assert ratio >= 4.5, f"{name}: accent_fg on {surface} is only {ratio:.1f}:1"
+
+
+@pytest.mark.parametrize("name", list(THEMES))
+def test_muted_text_stays_distinguishable(name):
+    """Version lines and answers like "Up to date" are muted, and since rows
+    lost their cards they sit on the page itself."""
+    theme = THEMES[name]
+    for surface in ("bg_main", "bg_card"):
+        ratio = contrast(theme.text_muted, getattr(theme, surface))
+        assert ratio >= 3.0, f"{name}: text_muted on {surface} is only {ratio:.1f}:1"
+
+
+@pytest.mark.parametrize("name", list(THEMES))
+def test_a_selection_does_not_look_like_a_hover(name):
+    """accent_soft marks the selected nav item and fills tonal buttons;
+    row_hover is what any row turns under the pointer."""
+    theme = THEMES[name]
+    assert theme.accent_soft.lower() != theme.row_hover.lower()
 
 
 @pytest.mark.parametrize("name", list(THEMES))

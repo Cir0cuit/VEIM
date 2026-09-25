@@ -46,6 +46,7 @@ class UpdateCheckButton(QPushButton):
         self.setObjectName("ghostBtn")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setMinimumHeight(34)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setToolTip(TOOLTIP)
         self.clicked.connect(self._on_click)
 

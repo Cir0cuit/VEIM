@@ -21,7 +21,7 @@ from src.recipes.registry import registry
 from src.core.recipe_base import DistroRecipe, ScrapeError
 from src.core.downloader import DownloadTask, free_for_download, probe_size, reserved_bytes
 from src.core.logger import log
-from src.ui.components import make_button, EmptyState
+from src.ui.components import make_button, DriveMap, EmptyState
 from src.ui.distro_card import DistroCard
 from src.ui.downloading_card import DownloadingCard
 from src.ui.adopt_dialog import AdoptDialog, ADOPT, EXCLUDE, UNDECIDED
@@ -148,6 +148,11 @@ class DashboardView(QWidget):
         root.addLayout(header)
         root.addSpacing(18)
 
+        # What the drive holds, to scale. Shown once the drive has been read.
+        self.drive_map = DriveMap()
+        root.addWidget(self.drive_map)
+        root.addSpacing(14)
+
         # --- scrolling body ---------------------------------------------
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -157,25 +162,25 @@ class DashboardView(QWidget):
         body = QWidget()
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(0, 0, 6, 0)
-        body_layout.setSpacing(8)
+        body_layout.setSpacing(2)
 
-        self.lbl_downloads = QLabel("DOWNLOADING")
+        self.lbl_downloads = QLabel("Downloading")
         self.lbl_downloads.setObjectName("sectionLabel")
         self.lbl_downloads.hide()
         body_layout.addWidget(self.lbl_downloads)
 
         self.download_layout = QVBoxLayout()
-        self.download_layout.setSpacing(8)
+        self.download_layout.setSpacing(2)
         body_layout.addLayout(self.download_layout)
 
-        self.lbl_installed = QLabel("ON THIS DRIVE")
+        self.lbl_installed = QLabel("On this drive")
         self.lbl_installed.setObjectName("sectionLabel")
         self.lbl_installed.hide()
         body_layout.addSpacing(6)
         body_layout.addWidget(self.lbl_installed)
 
         self.installed_layout = QVBoxLayout()
-        self.installed_layout.setSpacing(8)
+        self.installed_layout.setSpacing(2)
         body_layout.addLayout(self.installed_layout)
 
         # ISOs in Managed_ISOs that are none of VEIM's business. Said once,
@@ -191,7 +196,7 @@ class DashboardView(QWidget):
         # boot menu. Only adopted ISOs are moved now, so without this an ISO
         # the catalog does not know would stay hidden with no way to fix it.
         self.hidden_notice = QFrame()
-        self.hidden_notice.setObjectName("row")
+        self.hidden_notice.setObjectName("notice")
         notice_layout = QHBoxLayout(self.hidden_notice)
         notice_layout.setContentsMargins(14, 10, 14, 10)
         notice_layout.setSpacing(14)
@@ -285,6 +290,10 @@ class DashboardView(QWidget):
         """What the transfers in flight have still to write, in GB."""
         return reserved_bytes() / (1024 ** 3)
 
+    def written_gb(self) -> float:
+        """What the transfers in flight have written so far, in GB."""
+        return sum(t.downloaded_bytes for t in self.active_tasks.values() if t) / (1024 ** 3)
+
     def _offer_hidden_move(self):
         """After adoption: ISOs left in the drive root that Ventoy no longer
         lists. Adopting moved the recognised ones; these are the rest."""
@@ -343,12 +352,16 @@ class DashboardView(QWidget):
                     on_remove=self._handle_single_remove,
                     on_cancel=self._handle_single_cancel,
                 )
+                card.on_hover = lambda over, ck=ck: self.drive_map.mark(ck if over else None)
                 self.cards[ck] = card
             else:
                 card.set_item(it)
             if self.installed_layout.indexOf(card) != index:
                 self.installed_layout.removeWidget(card)
                 self.installed_layout.insertWidget(index, card)
+
+        self.drive_map.set_isos(
+            (ck, it.key, it.display_name or it.key, it.size_bytes) for ck, it in records.items())
 
         has_downloads = bool(self.download_cards)
         self.lbl_downloads.setVisible(has_downloads)
@@ -375,9 +388,8 @@ class DashboardView(QWidget):
             self.subtitle.setText("Nothing installed yet")
             return
 
-        total_gb = sum(i.size_bytes for i in items) / (1024 ** 3)
-        bits = [f"{count} distribution{'s' if count != 1 else ''}",
-                f"{total_gb:.1f} GB on drive"]
+        # How much they take is on the drive map.
+        bits = [f"{count} distribution{'s' if count != 1 else ''}"]
 
         # What the checks found, so the answer to "Check All Updates" can be
         # read in one place instead of by scrolling the list.
@@ -390,7 +402,7 @@ class DashboardView(QWidget):
             bits.append(f"{updates} update{'s' if updates != 1 else ''} available")
         elif self.cards and all(c.is_up_to_date for c in self.cards.values()):
             bits.append("all up to date")
-        self.subtitle.setText("  ·  ".join(bits))
+        self.subtitle.setText(", ".join(bits))
 
     def _refresh_adoption(self):
         """The header button, and the note about ISOs that are left alone."""

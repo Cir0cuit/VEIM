@@ -54,11 +54,12 @@ class CatalogRow(Row):
             self.combo.currentIndexChanged.connect(self._sync_state)
             self.add_action(self.combo)
 
-        self.badge = Pill("Installed", "ok")
+        # What you already have should stand out in a list of 64.
+        self.badge = Pill("Installed", "accent")
         self.badge.hide()
         self.add_action(self.badge)
 
-        self.btn = make_button("Download", "primary", self._on_button)
+        self.btn = make_button("Download", "tonal", self._on_button)
         self.btn.setMinimumWidth(118)
         self.add_action(self.btn)
 
@@ -116,9 +117,11 @@ class CatalogRow(Row):
             return
 
         self.progress.hide()
-        set_button_kind(self.btn, "primary")
 
         is_installed = flavor in self._installed
+        # Downloading a multi-gigabyte image you already have is not the row's
+        # main action.
+        set_button_kind(self.btn, "quiet" if is_installed else "tonal")
         self.badge.setVisible(is_installed)
         self.btn.setText("Reinstall" if is_installed else "Download")
         # An error note stays up until the row is used again.
@@ -241,6 +244,7 @@ class CatalogView(QWidget):
             chip.setObjectName("filterChip")
             chip.setCheckable(True)
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
+            chip.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             chip.clicked.connect(lambda _=False, c=cat: self._set_category(c))
             # A squeezed chip elides its label and stops naming its filter.
             chip.setMinimumWidth(chip.sizeHint().width())

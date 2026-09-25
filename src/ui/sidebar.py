@@ -26,6 +26,9 @@ class Sidebar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
+        # A plain QWidget subclass ignores its stylesheet background without
+        # this, and the sidebar's colour and edge never showed.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setFixedWidth(SIDEBAR_WIDTH)
 
         root = QVBoxLayout(self)
@@ -53,14 +56,9 @@ class Sidebar(QWidget):
         sub.setObjectName("brandSub")
         root.addWidget(sub)
 
-        root.addSpacing(26)
+        root.addSpacing(28)
 
         # --- Navigation --------------------------------------------------
-        nav_label = QLabel("MANAGE")
-        nav_label.setObjectName("navSection")
-        root.addWidget(nav_label)
-        root.addSpacing(8)
-
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._buttons = {}
@@ -70,6 +68,7 @@ class Sidebar(QWidget):
             btn.setObjectName("navItem")
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
             btn.setMinimumHeight(38)
             btn.clicked.connect(lambda _=False, k=key: self.navigated.emit(k))
             self._group.addButton(btn)
@@ -81,11 +80,6 @@ class Sidebar(QWidget):
         root.addStretch(1)
 
         # --- Drive summary ----------------------------------------------
-        drive_label = QLabel("DRIVE")
-        drive_label.setObjectName("navSection")
-        root.addWidget(drive_label)
-        root.addSpacing(8)
-
         self.lbl_drive = ElidingLabel("No drive")
         self.lbl_drive.setObjectName("rowTitle")
         root.addWidget(self.lbl_drive)

@@ -73,6 +73,20 @@ class Workspace(QWidget):
         else:
             self.stack.setCurrentWidget(self.library)
         self.sidebar.select(page)
+        self._focus_page()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Otherwise focus lands on the first nav item, whose ring then reads
+        # as a second selection.
+        self._focus_page()
+
+    def _focus_page(self):
+        if self.stack.currentWidget() is self.catalog:
+            # Arriving to look for something: typing searches.
+            self.catalog.search.setFocus()
+        else:
+            self.library.scroll.setFocus()
 
     def _cancel(self, recipe, flavor_id: str):
         """Stop a transfer from the row that started it."""
@@ -85,7 +99,10 @@ class Workspace(QWidget):
     def refresh_drive(self):
         """Re-read the drive for the sidebar, and pick the next time to."""
         free_gb, total_gb = self.library.drive_stats()
-        self.sidebar.set_drive(self.drive_path, free_gb, total_gb, self.library.reserved_gb())
+        reserved_gb = self.library.reserved_gb()
+        self.sidebar.set_drive(self.drive_path, free_gb, total_gb, reserved_gb)
+        self.library.drive_map.set_drive(total_gb, free_gb, reserved_gb,
+                                         self.library.written_gb())
         busy = bool(self.library.active_tasks)
         interval = POLL_BUSY_MS if busy else POLL_IDLE_MS
         if self._poll.interval() != interval or not self._poll.isActive():

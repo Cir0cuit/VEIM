@@ -9,6 +9,19 @@ CHEVRON_DOWN_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "assets", "icons", "chevron_down.png")
 ).replace("\\", "/")
 
+
+def _mix(base: str, over: str, amount: float) -> str:
+    """`over` laid on `base` at `amount` opacity, as a #rrggbb colour."""
+    a, b = (tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in (base, over))
+    return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b))
+
+
+def _rgba(colour: str, alpha: int) -> str:
+    """A #rrggbb colour at `alpha` (0-255), in stylesheet syntax."""
+    r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+    return f"rgba({r}, {g}, {b}, {alpha})"
+
+
 @dataclass
 class ThemeColors:
     name: str
@@ -35,6 +48,8 @@ class ThemeColors:
     bg_elevated: str = ""
     row_hover: str = ""
     accent_soft: str = ""
+    # The accent as text on a surface, where a fill colour can be too dark.
+    accent_fg: str = ""
     icon_chip: str = ""
     icon_plate: str = ""
 
@@ -42,7 +57,10 @@ class ThemeColors:
         self.bg_sidebar = self.bg_sidebar or self.bg_card
         self.bg_elevated = self.bg_elevated or self.bg_card_hover
         self.row_hover = self.row_hover or self.bg_card_hover
-        self.accent_soft = self.accent_soft or self.bg_card_hover
+        # Tinted with the accent. Falling back to bg_card_hover, as row_hover
+        # does, made a selected item look like a hovered one.
+        self.accent_soft = self.accent_soft or _mix(self.bg_main, self.accent, 0.16)
+        self.accent_fg = self.accent_fg or self.accent
         self.icon_chip = self.icon_chip or self.bg_elevated
         # Logos that are dark shapes on transparency need a light backdrop to
         # stay visible; see IconManager.needs_light_backdrop.
@@ -71,6 +89,7 @@ THEMES: Dict[str, ThemeColors] = {
         danger="#f85149",
         info="#58a6ff",
         bg_sidebar="#0f141b",
+        accent_fg="#58a6ff",
     ),
     "Amoled Black": ThemeColors(
         name="Amoled Black",
@@ -116,7 +135,6 @@ THEMES: Dict[str, ThemeColors] = {
         danger="#fb4934",
         info="#83a598",
         bg_sidebar="#1d2021",
-        accent_soft="#3c3836",
     ),
     "Solarized Light": ThemeColors(
         name="Solarized Light",
@@ -129,7 +147,8 @@ THEMES: Dict[str, ThemeColors] = {
         border_focus="#268bd2",
         text_primary="#073642",
         text_secondary="#586e75",
-        text_muted="#839496",
+        # base00: base0 is a dark-background tone, 2.6:1 on this page.
+        text_muted="#657b83",
         # Darker than Solarized blue, which is a foreground colour: as a button
         # fill it only reaches 3.7:1.
         accent="#1b6fa8",
@@ -142,6 +161,7 @@ THEMES: Dict[str, ThemeColors] = {
         bg_sidebar="#fdf6e3",
         icon_chip="#f0e9d4",
         accent_soft="#dfe8f0",
+        accent_fg="#176089",
     ),
     "Cyberpunk": ThemeColors(
         name="Cyberpunk",
@@ -228,13 +248,21 @@ THEMES: Dict[str, ThemeColors] = {
         bg_sidebar="#ffffff",
         icon_chip="#f2f6fa",
         accent_soft="#e8eefb",
+        accent_fg="#1d4ed8",
     ),
 }
 
 def generate_stylesheet(c: ThemeColors) -> str:
     return f"""
     * {{
-        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+        font-family: 'Atkinson Hyperlegible Next', 'Segoe UI', sans-serif;
+    }}
+    QToolTip {{
+        background-color: {c.bg_elevated};
+        color: {c.text_primary};
+        border: 1px solid {c.border};
+        padding: 5px 8px;
+        font-size: 12px;
     }}
     QMainWindow, QDialog {{
         background-color: {c.bg_main};
@@ -306,14 +334,23 @@ def generate_stylesheet(c: ThemeColors) -> str:
         color: {c.text_muted};
         border-color: {c.border};
     }}
+    /* Buttons take focus from the keyboard only (see make_button), so this
+       ring appears for someone tabbing through and never after a click. */
+    QPushButton:focus {{
+        border-color: {c.border_focus};
+    }}
     QPushButton#primaryBtn {{
         background-color: {c.accent};
         color: {c.accent_text};
-        border: none;
+        border: 1px solid {c.accent};
         font-weight: 700;
     }}
     QPushButton#primaryBtn:hover {{
         background-color: {c.accent_hover};
+        border-color: {c.accent_hover};
+    }}
+    QPushButton#primaryBtn:focus {{
+        border-color: {c.text_primary};
     }}
     QMenu {{
         background-color: {c.bg_card};
@@ -358,7 +395,7 @@ def generate_stylesheet(c: ThemeColors) -> str:
         border-radius: 8px;
         padding: 6px 32px 6px 14px;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 500;
         min-height: 26px;
     }}
     QComboBox:hover {{
@@ -421,39 +458,31 @@ def _component_stylesheet(c: ThemeColors) -> str:
         border-right: 1px solid {c.border};
     }}
     QLabel#brandMark {{
-        color: {c.accent};
-        font-size: 19px;
-        font-weight: 800;
+        color: {c.accent_fg};
+        font-size: 20px;
+        font-weight: 700;
         letter-spacing: 1px;
     }}
     QLabel#brandVersion {{
         color: {c.text_muted};
         font-size: 11px;
-        font-weight: 700;
-        padding-bottom: 2px;
+        font-weight: 600;
+        padding-bottom: 3px;
     }}
     QLabel#brandSub {{
         color: {c.text_muted};
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-    }}
-    QLabel#navSection {{
-        color: {c.text_muted};
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 1.2px;
+        font-size: 12px;
     }}
 
     /* ---------- Sidebar navigation ---------- */
     QPushButton#navItem {{
         background-color: transparent;
         color: {c.text_secondary};
-        border: none;
+        border: 1px solid transparent;
         border-radius: 8px;
         padding: 9px 12px;
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 14px;
+        font-weight: 500;
         text-align: left;
     }}
     QPushButton#navItem:hover {{
@@ -461,46 +490,62 @@ def _component_stylesheet(c: ThemeColors) -> str:
         color: {c.text_primary};
     }}
     QPushButton#navItem:checked {{
-        background-color: {c.accent};
-        color: {c.accent_text};
+        background-color: {c.accent_soft};
+        color: {c.text_primary};
+        font-weight: 700;
+    }}
+    QPushButton#navItem:focus {{
+        border-color: {c.border_focus};
     }}
 
     /* ---------- Content surfaces ---------- */
     QLabel#pageTitle {{
         color: {c.text_primary};
-        font-size: 22px;
-        font-weight: 800;
+        font-size: 26px;
+        font-weight: 700;
     }}
     QLabel#pageSubtitle {{
         color: {c.text_muted};
         font-size: 13px;
     }}
+    /* With the rows unboxed, the heading is what divides one list from the
+       next, so it outweighs a row title. */
     QLabel#sectionLabel {{
-        color: {c.text_muted};
-        font-size: 11px;
+        color: {c.text_primary};
+        font-size: 14px;
         font-weight: 700;
-        letter-spacing: 0.8px;
+        padding: 12px 0 4px 0;
     }}
 
-    /* ---------- Rows ---------- */
+    /* ---------- Rows ----------
+       A list, not a stack of cards: rows sit on the page and only the one
+       under the pointer, or one with a transfer running, gets a surface. */
     QFrame#row {{
-        background-color: {c.bg_card};
-        border: 1px solid {c.border};
+        background-color: transparent;
+        border: 1px solid transparent;
         border-radius: 10px;
     }}
     QFrame#row:hover {{
         background-color: {c.row_hover};
-        border-color: {c.border_focus};
     }}
     QFrame#rowActive {{
         background-color: {c.bg_card};
         border: 1px solid {c.accent};
         border-radius: 10px;
     }}
+    QFrame#driveCard, QFrame#notice {{
+        background-color: {c.bg_card};
+        border: 1px solid {c.border};
+        border-radius: 10px;
+    }}
+    QFrame#driveCard:hover {{
+        background-color: {c.row_hover};
+        border-color: {c.border_focus};
+    }}
     QLabel#rowTitle {{
         color: {c.text_primary};
-        font-size: 14px;
-        font-weight: 700;
+        font-size: 15px;
+        font-weight: 600;
     }}
     QLabel#rowMeta {{
         color: {c.text_muted};
@@ -508,6 +553,9 @@ def _component_stylesheet(c: ThemeColors) -> str:
     }}
     QLabel#rowDesc {{
         color: {c.text_secondary};
+        font-size: 12px;
+    }}
+    QWidget#driveMap {{
         font-size: 12px;
     }}
     QProgressBar#rowProgress {{
@@ -533,10 +581,13 @@ def _component_stylesheet(c: ThemeColors) -> str:
         border-radius: 10px;
     }}
 
-    /* ---------- Buttons ---------- */
-    QPushButton#ghostBtn, QPushButton#quietDanger {{
+    /* ---------- Buttons ----------
+       Filled for the one action a screen is about, tonal for an action every
+       row repeats, bordered for page-level secondaries, bare for the rest. */
+    QPushButton#ghostBtn, QPushButton#quietBtn, QPushButton#quietDanger,
+    QPushButton#subtleDanger, QPushButton#tonalBtn {{
         background-color: transparent;
-        border: 1px solid {c.border};
+        border: 1px solid transparent;
         border-radius: 8px;
         padding: 7px 14px;
         font-size: 12px;
@@ -544,6 +595,7 @@ def _component_stylesheet(c: ThemeColors) -> str:
     }}
     QPushButton#ghostBtn {{
         color: {c.text_secondary};
+        border-color: {c.border};
     }}
     QPushButton#ghostBtn:hover {{
         background-color: {c.row_hover};
@@ -554,6 +606,21 @@ def _component_stylesheet(c: ThemeColors) -> str:
         color: {c.text_muted};
         border-color: {c.border};
     }}
+    QPushButton#quietBtn, QPushButton#subtleDanger {{
+        color: {c.text_secondary};
+        padding: 7px 10px;
+    }}
+    QPushButton#quietBtn:hover {{
+        background-color: {c.bg_card_hover};
+        color: {c.text_primary};
+    }}
+    QPushButton#quietBtn:disabled {{
+        background-color: transparent;
+        color: {c.text_muted};
+    }}
+    QPushButton#subtleDanger:hover {{
+        color: {c.danger};
+    }}
     QPushButton#quietDanger {{
         color: {c.danger};
     }}
@@ -561,6 +628,21 @@ def _component_stylesheet(c: ThemeColors) -> str:
         background-color: {c.danger};
         color: #ffffff;
         border-color: {c.danger};
+    }}
+    QPushButton#tonalBtn {{
+        background-color: {c.accent_soft};
+        color: {c.accent_fg};
+        font-weight: 700;
+    }}
+    QPushButton#tonalBtn:hover {{
+        background-color: {c.accent};
+        color: {c.accent_text};
+        border-color: {c.accent};
+    }}
+    QPushButton#ghostBtn:focus, QPushButton#quietBtn:focus,
+    QPushButton#quietDanger:focus, QPushButton#subtleDanger:focus,
+    QPushButton#tonalBtn:focus {{
+        border-color: {c.border_focus};
     }}
 
     /* ---------- Chips / pills ---------- */
@@ -578,27 +660,44 @@ def _component_stylesheet(c: ThemeColors) -> str:
         color: {c.text_primary};
     }}
     QPushButton#filterChip:checked {{
-        background-color: {c.accent};
-        border-color: {c.accent};
-        color: {c.accent_text};
+        background-color: {c.accent_soft};
+        border-color: {c.accent_fg};
+        color: {c.accent_fg};
     }}
-    QLabel#statusPill, QLabel#okPill, QLabel#warnPill {{
+    QPushButton#filterChip:focus {{
+        border-color: {c.border_focus};
+    }}
+    /* Colour is kept for what wants attention. A current release reads as
+       plain text; a failure is filled; an update carries the accent. */
+    QLabel#statusPill, QLabel#okPill, QLabel#warnPill, QLabel#accentPill {{
         border-radius: 10px;
         padding: 3px 10px;
-        font-size: 11px;
-        font-weight: 700;
+        font-size: 12px;
+        font-weight: 600;
     }}
+    /* Weight 400, unlike the bare buttons beside them: these are answers,
+       not things to press. */
     QLabel#statusPill {{
-        background-color: {c.accent_soft};
-        color: {c.text_secondary};
+        color: {c.text_muted};
+        font-weight: 400;
     }}
     QLabel#okPill {{
-        background-color: {c.success};
-        color: #06231a;
+        color: {c.text_muted};
+        font-weight: 400;
     }}
+    QLabel#accentPill {{
+        background-color: {c.accent_soft};
+        color: {c.accent_fg};
+        font-weight: 700;
+    }}
+    /* A wash and an edge rather than a fill: readable in every palette, and
+       never mistaken for the filled primary button beside it (Gruvbox's accent
+       and warning are neighbouring golds). */
     QLabel#warnPill {{
-        background-color: {c.warning};
-        color: #2b1a02;
+        background-color: {_rgba(c.warning, 40)};
+        border: 1px solid {c.warning};
+        color: {c.text_primary};
+        font-weight: 700;
     }}
     QLabel#errorText {{
         color: {c.danger};
@@ -612,14 +711,16 @@ def _component_stylesheet(c: ThemeColors) -> str:
         border: none;
         border-radius: 3px;
     }}
+    /* The same code as the drive map: an outlined track, the accent, and a
+       paler accent for space downloads have spoken for. */
     QFrame#capacityTrack {{
-        background-color: {c.bg_input};
+        background-color: {c.border};
     }}
     QFrame#capacityFill {{
         background-color: {c.accent};
     }}
     QFrame#capacityReserved {{
-        background-color: {c.text_muted};
+        background-color: {_rgba(c.accent, 110)};
     }}
     QFrame#capacityFillWarn {{
         background-color: {c.warning};
@@ -706,6 +807,7 @@ class ThemeButton(QPushButton):
         super().__init__("Theme", parent)
         self.setObjectName("themeBtn")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setFixedHeight(34)
         self.setFixedWidth(96)
         self._build_menu()

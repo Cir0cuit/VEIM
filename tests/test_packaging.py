@@ -66,6 +66,7 @@ def test_spec_bundles_the_assets_the_app_reads_at_runtime():
     missing logos leave every catalog row waiting on a network fetch."""
     spec = read(PACKAGING, "veim.spec")
     assert '"assets", "icons"' in spec
+    assert '"assets", "fonts"' in spec
     assert "branding" in spec
 
 

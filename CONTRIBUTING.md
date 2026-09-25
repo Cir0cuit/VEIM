@@ -26,7 +26,7 @@ main.py                    entry point
 src/
 ├── core/
 │   ├── paths.py           where the app may read from and write to
-│   ├── branding.py        VEIM's own icon, and the Windows taskbar identity
+│   ├── branding.py        VEIM's own icon and typeface, and the Windows taskbar identity
 │   ├── drive.py           cross-platform removable and Ventoy drive detection
 │   ├── downloader.py      resumable transfers, SHA-256, archives, rate metering
 │   ├── inventory.py       what is on the drive, reconciled against the filesystem;
@@ -44,10 +44,11 @@ src/
 │   └── registry.py        CATALOG: every recipe and its category
 ├── assets/
 │   ├── branding/          VEIM's own mark
+│   ├── fonts/             Atkinson Hyperlegible Next, and its licence
 │   └── icons/             one rendered logo per catalog entry, shipped
 └── ui/
     ├── theme.py           palettes and the entire stylesheet
-    ├── components.py      shared widgets: rows, chips, flow layout, combo box
+    ├── components.py      shared widgets: rows, chips, drive map, flow layout, combo box
     ├── sidebar.py         navigation and drive summary
     ├── drive_picker.py    startup drive chooser
     ├── dashboard.py       installed library and download orchestration

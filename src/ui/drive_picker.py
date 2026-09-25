@@ -28,7 +28,7 @@ class DriveCard(QFrame):
         super().__init__(parent)
         self.drive = drive
         self.on_select = on_select
-        self.setObjectName("row")
+        self.setObjectName("driveCard")
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
         outer = QHBoxLayout(self)
@@ -46,15 +46,16 @@ class DriveCard(QFrame):
         title.setObjectName("rowTitle")
         header.addWidget(title)
 
-        if drive.label:
+        # Ventoy names its partition "Ventoy", which the badge already says.
+        if drive.label and not (drive.is_ventoy and drive.label.lower() == "ventoy"):
             lbl = QLabel(drive.label)
             lbl.setObjectName("rowMeta")
             header.addWidget(lbl)
 
         if drive.is_ventoy:
-            header.addWidget(Pill("VENTOY", "ok"))
+            header.addWidget(Pill("Ventoy", "accent"))
         elif drive.is_removable:
-            header.addWidget(Pill("REMOVABLE", "neutral"))
+            header.addWidget(Pill("Removable", "neutral"))
 
         header.addStretch()
         col.addLayout(header)
@@ -80,7 +81,8 @@ class DriveCard(QFrame):
         outer.addLayout(col, 1)
 
         # --- action ------------------------------------------------------
-        btn = make_button("Select", "primary", self._choose)
+        # Filled for the drive this screen is looking for, not for every disk.
+        btn = make_button("Select", "primary" if drive.is_ventoy else "tonal", self._choose)
         btn.setMinimumWidth(110)
         outer.addWidget(btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -189,6 +191,12 @@ class DrivePickerView(QWidget):
         root.addStretch(1)
         root.addLayout(centre, 0)
         root.addStretch(1)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Not the update button in the corner, whose focus ring would read as
+        # the thing this screen is asking for.
+        self.scroll.setFocus()
 
     # -- data ------------------------------------------------------------
 

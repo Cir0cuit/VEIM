@@ -26,6 +26,7 @@ if BASE_DIR not in sys.path:
 
 from PySide6.QtWidgets import QApplication
 
+from src.core.branding import load_fonts
 from src.core.downloader import DownloadTask
 from src.core.drive import DriveDetector, DriveInfo
 from src.ui.adopt_dialog import AdoptDialog
@@ -39,8 +40,10 @@ OUT_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(BASE_DIR, "docs", "
 
 # What the sidebar reports. Never the real working directory.
 DRIVE_LABEL = "K:\\"
-DRIVE_TOTAL_GB = 119.2
-DRIVE_FREE_GB = 64.8
+# A 64 GB stick: the ISOs below, the three loose ones, and the two transfers
+# (3.4 GB written, 4.0 GB to go).
+DRIVE_TOTAL_GB = 57.7
+DRIVE_FREE_GB = 37.3
 
 # (key, flavor, display name, installed version, filename, size, latest upstream)
 # "latest" equal to the installed version means up to date; None means the
@@ -144,6 +147,7 @@ def build(app, theme: str, page: str):
     # The two transfers above have about 4 GB still to write between them.
     workspace._poll.stop()
     workspace.sidebar.set_drive(DRIVE_LABEL, DRIVE_FREE_GB, DRIVE_TOTAL_GB, reserved_gb=4.0)
+    library.drive_map.set_drive(DRIVE_TOTAL_GB, DRIVE_FREE_GB, reserved_gb=4.0, written_gb=3.4)
     pump(app)
 
     # These images go into the repository.
@@ -180,6 +184,7 @@ def main() -> int:
     os.makedirs(OUT_DIR, exist_ok=True)
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
+    load_fonts()
 
     shots = [
         ("library.png", "Dark Modern", "library"),

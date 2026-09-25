@@ -25,6 +25,41 @@ def themed(qapp):
 
 # --------------------------------------------------------------- components
 
+def test_drive_map_is_to_scale_and_names_what_is_not_an_iso(themed):
+    from src.ui.components import DriveMap
+    drive_map = DriveMap()
+    assert drive_map.isHidden(), "a map of a drive that has not been read"
+
+    gib = 1024 ** 3
+    drive_map.set_isos([("arch::", "arch", "Arch Linux", 2 * gib),
+                        ("fedora::kde", "fedora", "Fedora", 3 * gib)])
+    # 24 GB used: the two ISOs, 3 GB a download has written, and 16 GB else.
+    drive_map.set_drive(total_gb=64, free_gb=40, reserved_gb=4, written_gb=3)
+    assert [(name, round(gb, 1)) for name, gb, _ in drive_map.parts()] == [
+        ("Arch Linux", 2.0), ("Fedora", 3.0), ("Other files", 16.0),
+        ("Downloaded so far", 3.0), ("Reserved for downloads", 4.0)]
+    assert not drive_map.isHidden()
+
+    # Inventory sizes that outgrow what the drive reports used (a stale
+    # record) leave no room for other files rather than a negative block.
+    drive_map.set_drive(total_gb=64, free_gb=62)
+    assert [name for name, _, _ in drive_map.parts()] == ["Arch Linux", "Fedora"]
+
+
+def test_drive_map_paints_one_iso_beside_a_download(themed):
+    """Regression: the legend's ISO swatch took the first three blocks, not
+    the first three ISOs. With one ISO that reached the hatched download block,
+    whose colour is None, and painting raised - which ends the app."""
+    from src.ui.components import DriveMap
+    drive_map = DriveMap()
+    drive_map.resize(700, drive_map.sizeHint().height())
+    drive_map.set_isos([("arch::", "arch", "Arch Linux", 1024 ** 3)])
+    drive_map.set_drive(total_gb=57.7, free_gb=40.0, reserved_gb=4.0)
+    drive_map.mark("arch::")
+
+    assert not drive_map.grab().isNull()
+
+
 def test_capacity_bar_clamps_out_of_range(themed):
     from src.ui.components import CapacityBar
     bar = CapacityBar()
@@ -143,6 +178,9 @@ def test_installed_row_never_offers_a_downgrade(themed):
     card.set_status_result("17.1", "https://example.invalid/CorePure64-17.1.iso")
     assert not card.btn_update.isHidden()
     assert card.status.text() == "Update to 17.1"
+    # Said once, by the button that takes it.
+    assert card.btn_update.text() == "Update to 17.1"
+    assert card.status.isHidden()
 
 
 @pytest.mark.parametrize("latest,installed,older", [

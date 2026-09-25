@@ -5,6 +5,8 @@ placeholder, which is how tuxedo and hackeros shipped without real logos.
 """
 import os
 
+import pytest
+
 from src.core.branding import BRANDING_DIR
 from src.core.icons import ICON_URLS, BUNDLED_PREFIX
 from src.recipes.registry import registry
@@ -43,3 +45,22 @@ def test_bundled_icons_actually_ship():
         if not os.path.exists(path):
             missing.append(f"{key} -> {path}")
     assert not missing, f"bundled icon files are absent: {missing}"
+
+
+def test_brand_hue_is_the_colour_a_logo_is_drawn_in(qapp, tmp_path, monkeypatch):
+    """The drive map colours an ISO's block with it; a grey logo has none."""
+    from PySide6.QtGui import QColor, QImage
+    from src.core.icons import IconManager
+
+    manager = IconManager()
+    paths = {}
+    for key, colour in (("red", QColor(220, 30, 30)), ("grey", QColor(128, 128, 128))):
+        image = QImage(48, 48, QImage.Format.Format_ARGB32)
+        image.fill(colour)
+        paths[key] = str(tmp_path / f"{key}.png")
+        image.save(paths[key])
+    monkeypatch.setattr(manager, "_icon_path", lambda key: paths.get(key))
+
+    assert manager.brand_hue("red") == pytest.approx(0, abs=1)
+    assert manager.brand_hue("grey") is None
+    assert manager.brand_hue("missing") is None

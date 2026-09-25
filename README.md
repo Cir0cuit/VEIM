@@ -243,14 +243,19 @@ all at once. Rows read **Checking…** while they wait, then each one shows:
 | | |
 |---|---|
 | **Up to date** | The version on the drive is what the project publishes now. |
-| **Update to 44** | There is a newer release, and the row names it. An **Update** button appears. |
+| **Update to 44** | There is a newer release. The row's button names it, and pressing it downloads that release. |
 | **Newer than 43** | The drive holds a *later* release than VEIM can find — a beta you fetched yourself, say. Nothing is offered, because it would be a downgrade. |
 | **No current release** | The project's download page couldn't be read just now: a mirror is down, or the page has changed. The ISO is fine to boot. VEIM says this instead of guessing. |
 
 The header sums it up — *2 updates available*, or *all up to date* — and any
 single row can be checked on its own.
 
-**Update** downloads the new release and replaces the old one. The progress
+Above the list, the drive map shows the drive to scale: a block for each ISO,
+as wide as its file and coloured like its logo, then everything else on the
+drive, the space downloads in progress still need (hatched), and what is free.
+Point at a block to see which ISO it is.
+
+The update button downloads the new release and replaces the old one. The progress
 shows on the row itself, with a **Cancel** button. The old ISO stays on the
 drive and bootable until the new file has fully arrived and been verified;
 only then is it swapped in and the old one removed.
@@ -299,7 +304,7 @@ stops checking it. That's also the way out for an ISO adopted by mistake.
 - **Space-checked.** Free space is confirmed before a single byte is written,
   counting what the downloads already running still have to write. Six
   transfers started at once cannot overfill the drive between them. The drive
-  gauge in the sidebar shows that space as spoken for, and re-reads the drive
+  map and the sidebar gauge show that space as spoken for, and re-read the drive
   every couple of seconds while anything is downloading. When an update would
   fit only in the old ISO's place, VEIM asks before deleting the old one first
   — and says plainly that a download that then fails leaves neither on the

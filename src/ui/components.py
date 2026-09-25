@@ -7,10 +7,13 @@ from typing import Callable, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QComboBox, QListView, QHBoxLayout,
-    QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout, QProgressBar
+    QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout, QProgressBar,
+    QToolTip
 )
-from PySide6.QtCore import Qt, QSize, QRect, QPoint
-from PySide6.QtGui import QCursor, QPixmap
+from PySide6.QtCore import Qt, QSize, QRect, QRectF, QPoint, QPointF
+from PySide6.QtGui import (
+    QBrush, QColor, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPixmap
+)
 
 from src.core import browser
 from src.core.downloader import DownloadTask
@@ -321,7 +324,8 @@ class IconChip(QLabel):
 class Pill(QLabel):
     """Small status badge. `tone` picks the stylesheet variant."""
 
-    TONES = {"neutral": "statusPill", "ok": "okPill", "warn": "warnPill"}
+    TONES = {"neutral": "statusPill", "ok": "okPill", "warn": "warnPill",
+             "accent": "accentPill"}
 
     def __init__(self, text: str = "", tone: str = "neutral", parent=None):
         super().__init__(text, parent)
@@ -378,8 +382,241 @@ class CapacityBar(QWidget):
             0, 0, int(width * (self._ratio + self._reserved_ratio)), height)
 
 
+def _gb_text(gb: float) -> str:
+    return f"{gb:.1f} GB" if gb >= 1 else f"{gb * 1024:.0f} MB"
+
+
+def _hue_distance(a: float, b: float) -> float:
+    d = abs(a - b) % 360
+    return min(d, 360 - d)
+
+
+class DriveMap(QWidget):
+    """The drive to scale, left to right: each managed ISO as a block the size
+    of its file, everything else on the drive, the downloads in flight (what
+    they have written, then what they still need), then free space.
+
+    Each ISO's block takes the hue of its logo. Pointing at a block names it,
+    and pointing at a row outlines that row's block.
+    """
+
+    BAR = 24
+    GAP = 2
+    LEGEND_GAP = 10
+    SWATCH = 10
+    WRITTEN = "Downloaded so far"
+    RESERVED = "Reserved for downloads"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("driveMap")
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._isos: list = []           # (ident, distro key, name, bytes), in row order
+        self._total = self._free = self._reserved = self._written = 0.0
+        self._blocks: list = []         # (QRectF, tooltip) as last painted
+        self._hovered = -1              # block under the pointer
+        self._marked = None             # ident of the ISO whose row is under it
+        self.hide()
+
+    # -- data -------------------------------------------------------------
+
+    def set_isos(self, isos):
+        """(ident, distro key, name, size in bytes) for each managed ISO."""
+        self._isos = list(isos)
+        self.update()
+
+    def set_drive(self, total_gb: float, free_gb: float, reserved_gb: float = 0.0,
+                  written_gb: float = 0.0):
+        """`reserved_gb` is what downloads in flight still have to write, and
+        `written_gb` what they already have: used space, but no ISO yet."""
+        self._total, self._free = total_gb, free_gb
+        self._reserved = max(0.0, min(reserved_gb, free_gb))
+        self._written = max(0.0, written_gb)
+        self.setVisible(total_gb > 0)
+        self.update()
+
+    def mark(self, ident):
+        """Outline one ISO's block, or none."""
+        self._marked = ident
+        self.update()
+
+    def parts(self) -> list:
+        """(name, GB, colour) of each block, left to right. Free space is what
+        the blocks leave of the bar; `colour` None is drawn hatched."""
+        from src.core.icons import icon_manager
+
+        c = theme_manager.current
+        base, alternate = (0.56, 0.70) if c.mode == "Dark" else (0.46, 0.34)
+        parts = []
+        previous, lightness = None, base
+        for _, key, name, size in self._isos:
+            hue = icon_manager.brand_hue(key)
+            if hue is None:
+                # Brighter than the other files' grey, so it is not read as them.
+                colour = QColor(c.text_secondary)
+            else:
+                # Two blues side by side would read as one block.
+                near = previous is not None and _hue_distance(hue, previous) < 25
+                lightness = (alternate if lightness == base else base) if near else base
+                colour = QColor.fromHslF(hue / 360, 0.55, lightness)
+            previous = hue
+            parts.append((name, size / (1024 ** 3), colour))
+
+        isos_gb = sum(gb for _, gb, _ in parts)
+        other = max(0.0, self._total - self._free - isos_gb - self._written)
+        if other > 0:
+            neutral = QColor(c.text_muted)
+            neutral.setAlphaF(0.4)
+            parts.append(("Other files", other, neutral))
+        if self._written > 0:
+            written = QColor(c.accent)
+            written.setAlphaF(0.6)
+            parts.append((self.WRITTEN, self._written, written))
+        if self._reserved > 0:
+            parts.append((self.RESERVED, self._reserved, None))
+        return parts
+
+    # -- geometry ---------------------------------------------------------
+
+    def sizeHint(self) -> QSize:
+        return QSize(400, self.BAR + self.LEGEND_GAP + self.fontMetrics().height() + 2)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(120, self.sizeHint().height())
+
+    # -- painting ---------------------------------------------------------
+
+    def paintEvent(self, event):
+        c = theme_manager.current
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        width = self.width()
+        bar = QRectF(0.5, 0.5, width - 1, self.BAR - 1)
+
+        # An empty well is the whole drive; whatever no block covers is free.
+        outline = QPainterPath()
+        outline.addRoundedRect(bar, 6, 6)
+        p.fillPath(outline, QColor(c.bg_input))
+        p.setClipPath(outline)
+
+        parts = self.parts()
+        marked = next((i for i, iso in enumerate(self._isos) if iso[0] == self._marked), -1)
+        self._blocks = []
+        scale = width / self._total if self._total > 0 else 0
+        x = 0.0
+        for index, (name, gb, colour) in enumerate(parts):
+            # Never narrower than a sliver: a small ISO still has to be seen.
+            w = max(3.0, gb * scale)
+            rect = QRectF(x, 0, max(1.0, w - self.GAP), self.BAR)
+            if colour is None:
+                self._paint_reserved(p, rect, c)
+            else:
+                p.fillRect(rect, colour)
+            if index in (self._hovered, marked):
+                p.setPen(QPen(QColor(c.text_primary), 2))
+                p.drawRect(rect.adjusted(1, 1, -1, -1))
+            self._blocks.append((rect, f"{name}, {_gb_text(gb)}"))
+            x += w
+
+        p.setClipping(False)
+        p.setPen(QPen(QColor(c.border), 1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(outline)
+
+        self._paint_legend(p, c, parts)
+        p.end()
+
+    @staticmethod
+    def _paint_reserved(p: QPainter, rect: QRectF, c):
+        """Hatched: not written yet, but no longer free either."""
+        tint = QColor(c.accent)
+        tint.setAlphaF(0.25)
+        p.fillRect(rect, tint)
+        p.fillRect(rect, QBrush(QColor(c.accent_fg), Qt.BrushStyle.BDiagPattern))
+
+    def _paint_legend(self, p: QPainter, c, parts):
+        metrics = self.fontMetrics()
+        baseline = self.BAR + self.LEGEND_GAP + metrics.ascent()
+        mid = self.BAR + self.LEGEND_GAP + metrics.height() / 2
+
+        count = len(self._isos)
+        items = []
+        if count:
+            isos_gb = sum(gb for _, gb, _ in parts[:count])
+            plural = "ISO" if count == 1 else "ISOs"
+            items.append(([colour for _, _, colour in parts[:min(count, 3)]],
+                          f"{_gb_text(isos_gb)} in {count} {plural}"))
+        for name, gb, colour in parts[count:]:
+            if name == "Other files":
+                items.append(([colour], f"Other files {_gb_text(gb)}"))
+        in_flight = self._written + self._reserved
+        if in_flight > 0:
+            items.append(([None], f"Downloads {_gb_text(in_flight)}"))
+
+        # How much room is left is the question the map is here to answer.
+        free_text = f"{_gb_text(self._free - self._reserved)} free"
+        of_text = f" of {self._total:.0f} GB"
+        bold = QFont(self.font())
+        bold.setWeight(QFont.Weight.DemiBold)
+        of_x = self.width() - metrics.horizontalAdvance(of_text)
+        free_x = of_x - QFontMetrics(bold).horizontalAdvance(free_text)
+        p.setPen(QColor(c.text_secondary))
+        p.drawText(QPointF(of_x, baseline), of_text)
+        p.setFont(bold)
+        p.setPen(QColor(c.text_primary))
+        p.drawText(QPointF(free_x, baseline), free_text)
+        p.setFont(self.font())
+
+        p.setPen(QColor(c.text_secondary))
+        x = 0.0
+        for colours, label in items:
+            span = self.SWATCH + 6 + metrics.horizontalAdvance(label)
+            if x + span > free_x - 16:
+                break           # a narrow window keeps the free figure over these
+            self._paint_swatch(p, QRectF(x, mid - self.SWATCH / 2, self.SWATCH, self.SWATCH),
+                               colours, c)
+            p.drawText(QPointF(x + self.SWATCH + 6, baseline), label)
+            x += span + 18
+
+    def _paint_swatch(self, p: QPainter, rect: QRectF, colours, c):
+        path = QPainterPath()
+        path.addRoundedRect(rect, 2, 2)
+        p.save()
+        p.setClipPath(path)
+        if colours == [None]:
+            self._paint_reserved(p, rect, c)
+        else:
+            # A stripe per colour: the ISOs are several hues, not one.
+            step = rect.width() / len(colours)
+            for i, colour in enumerate(colours):
+                p.fillRect(QRectF(rect.x() + i * step, rect.y(), step + 0.5, rect.height()),
+                           colour)
+        p.restore()
+
+    # -- hover ------------------------------------------------------------
+
+    def mouseMoveEvent(self, event):
+        pos = event.position()
+        hovered = next((i for i, (rect, _) in enumerate(self._blocks)
+                        if rect.adjusted(0, 0, self.GAP, 0).contains(pos)), -1)
+        if hovered != self._hovered:
+            self._hovered = hovered
+            self.update()
+        if hovered >= 0:
+            QToolTip.showText(event.globalPosition().toPoint(), self._blocks[hovered][1], self)
+        else:
+            QToolTip.hideText()
+
+    def leaveEvent(self, event):
+        self._hovered = -1
+        self.update()
+        super().leaveEvent(event)
+
+
 BUTTON_OBJECT_NAMES = {
-    "primary": "primaryBtn", "ghost": "ghostBtn", "danger": "quietDanger",
+    "primary": "primaryBtn", "tonal": "tonalBtn", "ghost": "ghostBtn",
+    "quiet": "quietBtn", "danger": "quietDanger", "subtle-danger": "subtleDanger",
 }
 
 
@@ -387,12 +624,14 @@ def make_button(text: str, kind: str = "ghost", on_click: Optional[Callable] = N
                 parent=None) -> QPushButton:
     """Create a themed button.
 
-    kind: "primary" | "ghost" | "danger"
+    kind: "primary" | "tonal" | "ghost" | "quiet" | "danger" | "subtle-danger"
     """
     btn = QPushButton(text, parent)
     btn.setObjectName(BUTTON_OBJECT_NAMES.get(kind, "ghostBtn"))
     btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
     btn.setMinimumHeight(34)
+    # Reachable with Tab, but a click leaves no focus ring behind.
+    btn.setFocusPolicy(Qt.FocusPolicy.TabFocus)
     if on_click:
         btn.clicked.connect(on_click)
     return btn

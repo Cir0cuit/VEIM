@@ -48,6 +48,9 @@ class DistroCard(Row):
         super().__init__(parent)
         self.item = item
         self.on_check_update = on_check_update
+        # Told when the pointer enters or leaves the row; the drive map uses it
+        # to outline this ISO's block.
+        self.on_hover: Optional[Callable[[bool], None]] = None
 
         self._latest_ver = ""       # the last check's answer, "" before any
         self._checking = False
@@ -62,13 +65,16 @@ class DistroCard(Row):
         self.status = Pill("", "neutral")
         self.add_action(self.status)
 
-        self.btn_check = make_button("Check", "ghost", self.start_check)
-        self.add_action(self.btn_check)
-
         self.btn_update = make_button("Update", "primary", lambda: on_download(self.item, self))
         self.add_action(self.btn_update)
 
-        self.btn_remove = make_button("Remove", "danger", lambda: on_remove(self.item, self))
+        self.btn_check = make_button("Check", "quiet", self.start_check)
+        self.btn_check.setToolTip("Look for a newer release of this ISO")
+        self.add_action(self.btn_check)
+
+        self.btn_remove = make_button("Remove", "subtle-danger",
+                                      lambda: on_remove(self.item, self))
+        self.btn_remove.setToolTip("Stop managing this ISO, or delete it from the drive")
         self.add_action(self.btn_remove)
 
         self.btn_cancel = make_button("Cancel", "danger",
@@ -148,7 +154,9 @@ class DistroCard(Row):
 
     def update_progress(self, task: DownloadTask):
         if self._downloading:
-            show_progress(self.progress, self.meta, task)
+            # Says what is coming, since the version line gives way to this.
+            lead = f"Updating to {self._latest_ver}" if self.update_available else "Downloading"
+            show_progress(self.progress, self.meta, task, lead)
 
     def end_download(self, success: bool, msg: str = "", version: str = ""):
         """Back to an ordinary row. A cancelled transfer passes no message."""
@@ -178,10 +186,16 @@ class DistroCard(Row):
         self.btn_update.setVisible(not busy and not self._checking
                                    and self.update_available)
 
+        if self.update_available:
+            self.btn_update.setText(f"Update to {self._latest_ver}")
+
         text, tone = ("", "neutral") if busy else self._status()
         self.status.setText(text)
         self.status.set_tone(tone)
-        self.status.setVisible(bool(text))
+        # Only a problem is a pill beside the buttons. An update is said by the
+        # button that takes it; any other answer joins the version line, so the
+        # right-hand side holds nothing but things to press.
+        self.status.setVisible(tone == "warn")
 
         if busy:
             # begin_download() and update_progress() own the meta line.
@@ -194,7 +208,19 @@ class DistroCard(Row):
             self.meta.setText(self._error)
         else:
             bits = [f"Version {self.item.version}", human_size(self.item.size_bytes)]
+            if tone in ("ok", "neutral"):
+                bits.append(text)
             self.meta.setText("  ·  ".join(b for b in bits if b))
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        if self.on_hover:
+            self.on_hover(True)
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        if self.on_hover:
+            self.on_hover(False)
 
     def _status(self) -> tuple:
         if self._checking:
@@ -206,7 +232,7 @@ class DistroCard(Row):
         if self._latest_ver in self.CHECK_FAILURES:
             return self.CHECK_FAILURES[self._latest_ver], "warn"
         if self.update_available:
-            return f"Update to {self._latest_ver}", "warn"
+            return f"Update to {self._latest_ver}", "accent"
         if self.is_ahead:
             return f"Newer than {self._latest_ver}", "neutral"
         return "Up to date", "ok"

@@ -9,7 +9,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 from src.ui.app import VEIMMainWindow
-from src.core.branding import app_icon, claim_taskbar_identity
+from src.core.branding import app_icon, claim_taskbar_identity, load_fonts
 from src import __version__
 from src.core.logger import log
 
@@ -25,6 +25,7 @@ def main():
         app.setOrganizationName("VEIM")
         app.setApplicationVersion(__version__)
         app.setWindowIcon(app_icon())
+        load_fonts()
 
         window = VEIMMainWindow()
         window.show()

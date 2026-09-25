@@ -2,11 +2,16 @@
 import os
 import sys
 
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QFontDatabase, QIcon
 
 from src.core import paths
 
 BRANDING_DIR = os.path.join(paths.resource_dir(), "src", "assets", "branding")
+FONT_DIR = os.path.join(paths.resource_dir(), "src", "assets", "fonts")
+
+# Shipped rather than left to the platform: the list is version strings and
+# filenames, where 0 and O, or 1, l and I, have to be told apart at a glance.
+FONT_FAMILY = "Atkinson Hyperlegible Next"
 
 APP_ID = "Cir0cuit.VEIM"
 
@@ -21,6 +26,13 @@ def app_icon() -> QIcon:
     if icon.isNull():
         icon = QIcon(os.path.join(BRANDING_DIR, "veim.svg"))
     return icon
+
+
+def load_fonts() -> None:
+    """Register the typeface. Without it Qt falls back to the platform's own."""
+    for name in sorted(os.listdir(FONT_DIR)):
+        if name.endswith(".ttf"):
+            QFontDatabase.addApplicationFont(os.path.join(FONT_DIR, name))
 
 
 def claim_taskbar_identity() -> None:

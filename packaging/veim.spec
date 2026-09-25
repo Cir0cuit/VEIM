@@ -19,6 +19,8 @@ datas = [
     # catalog row waits on a network fetch that may never succeed.
     (os.path.join(ROOT, "src", "assets", "icons"),
      os.path.join("src", "assets", "icons")),
+    (os.path.join(ROOT, "src", "assets", "fonts"),
+     os.path.join("src", "assets", "fonts")),
 ]
 
 # Qt ships far more than a desktop form needs, and every module left in costs

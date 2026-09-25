@@ -113,6 +113,7 @@ class IconManager:
         self.cache_dir = paths.icon_cache_dir()
         self.pixmap_cache: Dict[Tuple[str, int, float], QPixmap] = {}
         self._backdrop_cache: Dict[str, bool] = {}
+        self._hue_cache: Dict[str, Optional[float]] = {}
 
     def _icon_path(self, key: str) -> Optional[str]:
         """A copy in the icon cache wins; otherwise the one that ships with the app."""
@@ -176,24 +177,56 @@ class IconManager:
             return self._backdrop_cache[k]
 
         needs = False
-        path = self._icon_path(k)
-        image = QImage(path) if path else QImage()
-        if not image.isNull():
-            # A thumbnail is enough to judge overall darkness.
-            small = image.scaled(24, 24, Qt.AspectRatioMode.IgnoreAspectRatio,
-                                 Qt.TransformationMode.SmoothTransformation)
-            pixels = [small.pixelColor(x, y) for y in range(24) for x in range(24)]
-            visible = [c for c in pixels if c.alpha() > 128]
-            if visible:
-                dark = sum(
-                    1 for c in visible
-                    if 0.2126 * c.red() + 0.7152 * c.green() + 0.0722 * c.blue() < 70
-                )
-                # Nearly every visible pixel dark => the logo IS the dark shape.
-                needs = dark / len(visible) >= 0.85
+        visible = self._visible_pixels(k)
+        if visible:
+            dark = sum(
+                1 for c in visible
+                if 0.2126 * c.red() + 0.7152 * c.green() + 0.0722 * c.blue() < 70
+            )
+            # Nearly every visible pixel dark => the logo IS the dark shape.
+            needs = dark / len(visible) >= 0.85
 
         self._backdrop_cache[k] = needs
         return needs
+
+    def brand_hue(self, key: str) -> Optional[float]:
+        """The hue, in degrees, a logo is mostly drawn in; None for a grey one.
+
+        The drive map colours each ISO's block with it, so a block can be told
+        from its row by the logo beside the row's name.
+        """
+        k = key.lower()
+        if k in self._hue_cache:
+            return self._hue_cache[k]
+
+        # Twelve 30-degree bins, each weighted by how saturated its pixels are:
+        # a logo's colour is the one most of it is painted in, not the average,
+        # which for a multicoloured mark is mud. The hue is then the mean within
+        # that bin, so two blues are still two blues.
+        bins = [[0.0, 0.0] for _ in range(12)]     # weight, weighted hue
+        for c in self._visible_pixels(k):
+            if c.hsvSaturationF() > 0.35 and c.valueF() > 0.25:
+                hue, weight = c.hsvHueF() * 360, c.hsvSaturationF()
+                bucket = bins[int(hue // 30) % 12]
+                bucket[0] += weight
+                bucket[1] += hue * weight
+        weight, weighted = max(bins, key=lambda b: b[0])
+        # A handful of tinted pixels in a grey logo is antialiasing, not colour.
+        hue = weighted / weight if weight >= 8 else None
+
+        self._hue_cache[k] = hue
+        return hue
+
+    def _visible_pixels(self, key: str) -> list:
+        """The opaque pixels of a 24px thumbnail: enough to judge a logo by."""
+        path = self._icon_path(key)
+        image = QImage(path) if path else QImage()
+        if image.isNull():
+            return []
+        small = image.scaled(24, 24, Qt.AspectRatioMode.IgnoreAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+        pixels = (small.pixelColor(x, y) for y in range(24) for x in range(24))
+        return [c for c in pixels if c.alpha() > 128]
 
 
 icon_manager = IconManager()
