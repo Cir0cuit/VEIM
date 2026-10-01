@@ -23,26 +23,29 @@ class ArtixRecipe(DistroRecipe):
 
         try:
             r = session.get("https://download.artixlinux.org/iso/", timeout=8)
-            if r.status_code == 200:
-                # Every image of this edition the directory holds, newest
-                # taken. The first link found is only the newest for as long
-                # as the mirror keeps nothing older beside it.
-                found = {}
-                for h in hrefs(r.text):
-                    m = re.fullmatch(rf'artix-{re.escape(sub)}-(\d{{8}})-x86_64\.iso', h.split("/")[-1])
-                    # The page links the weekly test images too, and those are
-                    # always the newest thing on it.
-                    if m and "weekly" not in h:
-                        found[m.group(1)] = h
-                if found:
-                    ver = max(found)
-                    h = found[ver]
-                    url = h if h.startswith("http") else f"https://download.artixlinux.org/iso/{h}"
-                    return DownloadInfo(version=ver, url=url, filename=h.split("/")[-1])
+            r.raise_for_status()
         except Exception as e:
+            # Not an empty listing: Cloudflare in front of the mirror answers
+            # 403 to some networks, and that has to say so.
             log.warning(f"[Artix] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not reach download.artixlinux.org ({e})")
 
-        raise ScrapeError(self.name, f"no current {sub} ISO listed on download.artixlinux.org")
+        # Every image of this edition the directory holds, newest taken. The
+        # first link found is only the newest for as long as the mirror keeps
+        # nothing older beside it.
+        found = {}
+        for h in hrefs(r.text):
+            m = re.fullmatch(rf'artix-{re.escape(sub)}-(\d{{8}})-x86_64\.iso', h.split("/")[-1])
+            # The page links the weekly test images too, and those are always
+            # the newest thing on it.
+            if m and "weekly" not in h:
+                found[m.group(1)] = h
+        if not found:
+            raise ScrapeError(self.name, f"no current {sub} ISO listed on download.artixlinux.org")
+        ver = max(found)
+        h = found[ver]
+        url = h if h.startswith("http") else f"https://download.artixlinux.org/iso/{h}"
+        return DownloadInfo(version=ver, url=url, filename=h.split("/")[-1])
 
 
 class SparkyRecipe(DistroRecipe):

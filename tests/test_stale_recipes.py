@@ -276,6 +276,18 @@ def test_artix_takes_the_newest_stable_image_not_the_first_or_a_weekly(monkeypat
     assert "weekly" not in info.url
 
 
+def test_artix_names_a_refused_listing_rather_than_calling_it_empty(monkeypatch):
+    """Regression: Cloudflare answered the mirror sweep's runner 403, and the
+    row read "no current ISO listed" as though the directory were empty."""
+    recipe, _ = _with(monkeypatch, ArtixRecipe(), {
+        "https://download.artixlinux.org/iso/": _Resp("Just a moment...", 403),
+    })
+    with pytest.raises(ScrapeError) as err:
+        recipe.fetch_download_info("plasma-openrc")
+    assert "HTTP 403" in str(err.value)
+    assert "no current" not in str(err.value)
+
+
 def test_tuxedo_takes_the_newest_image_not_the_first(monkeypatch):
     recipe, _ = _with(monkeypatch, TuxedoRecipe(), {
         "https://os.tuxedocomputers.com/": _listing(
