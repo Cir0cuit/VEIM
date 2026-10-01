@@ -28,3 +28,20 @@ def test_a_link_with_no_version_is_not_answered_with_a_guess(monkeypatch):
 
     with pytest.raises(ScrapeError):
         _recipe(monkeypatch, page).fetch_download_info("stable")
+
+
+def test_link_on_the_dl_elementaryos_org_mirror(monkeypatch):
+    """Regression: the mirror moved to dl.elementaryos.org/<token>/, with no
+    /download/ in the path, and the row read "No current release"."""
+    host = "https://dl.elementaryos.org/MTc5MDgxMjk0Mw=="
+    page = (
+        '<a href="magnet:?xt=urn:btih:90b3&dn=elementaryos-8.1-stable-arm64.20260219.iso'
+        '&ws=https%3A%2F%2Fdl.elementaryos.org%2FMTc5MDgxMjk0Mw%3D%3D%2Felementaryos-8.1-stable-arm64.20260219.iso">'
+        f'<a href="{host}/elementaryos-8.1-stable-arm64.20260219.iso">'
+        f'<a href="{host}/elementaryos-8.1-stable-amd64.20260219.iso">'
+    )
+    info = _recipe(monkeypatch, page).fetch_download_info("stable")
+
+    assert info.version == "8.1"
+    assert info.url == f"{host}/elementaryos-8.1-stable-amd64.20260219.iso"
+    assert info.filename == "elementaryos-8.1-stable-amd64.20260219.iso"

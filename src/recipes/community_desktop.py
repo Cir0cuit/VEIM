@@ -181,16 +181,17 @@ class ElementaryRecipe(DistroRecipe):
         try:
             r = session.get("https://elementary.io/", timeout=8)
             if r.status_code == 200:
-                m = re.search(r'//([a-zA-Z0-9\.\-]+/download/[^"\'<>\s]+amd64[^"\'<>\s]+\.iso)', r.text)
+                # Matched by the image's own name rather than its host or path:
+                # the mirror moved from ams3.dl.elementary.io/download/ to
+                # dl.elementaryos.org/ without the file changing. No version in
+                # the name means the page has changed, and a number written in
+                # here would go on being reported long after it stopped being
+                # the latest release.
+                m = re.search(r'//([\w.\-]+/[^"\'<>\s]*?'
+                              r'(elementaryos-(\d+(?:\.\d+)*)-stable-amd64\.\d+\.iso))', r.text)
                 if m:
-                    url = f"https://{m.group(1)}"
-                    fname = url.split("/")[-1]
-                    ver_m = re.search(r'elementaryos-([0-9\.\-]+)', fname)
-                    # No version in the name means the page has changed. A
-                    # number written in here would go on being reported as the
-                    # latest release long after it stopped being one.
-                    if ver_m:
-                        return DownloadInfo(version=ver_m.group(1), url=url, filename=fname)
+                    return DownloadInfo(version=m.group(3), url=f"https://{m.group(1)}",
+                                        filename=m.group(2))
         except Exception as e:
             log.warning(f"[elementary OS] Scrape error: {e}")
 
