@@ -408,16 +408,38 @@ Light and Clean Light — or **System**, which follows your desktop.
 
 ## Run from source
 
+Python 3.10 or newer. Use a virtual environment: most Linux distributions
+refuse a system-wide `pip install` ("externally-managed-environment").
+
 ```bash
 git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python main.py
 ```
 
-Python 3.10 or newer. [CONTRIBUTING.md](CONTRIBUTING.md) covers the test
-suite, the code layout, adding a distribution or a theme, and how the
-installers are built.
+On Linux, Qt needs a few X11 libraries that some desktops leave out. Without
+them it stops with `Could not load the Qt platform plugin "xcb"`:
+
+```bash
+# Debian, Ubuntu, Linux Mint, Pop!_OS
+sudo apt install python3-venv libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+    libxcb-keysyms1 libxcb-render-util0 libxkbcommon-x11-0 libegl1
+
+# Fedora
+sudo dnf install xcb-util-cursor xcb-util-wm xcb-util-image \
+    xcb-util-keysyms xcb-util-renderutil libxkbcommon-x11
+
+# Arch, Manjaro, EndeavourOS
+sudo pacman -S xcb-util-cursor xcb-util-wm xcb-util-image \
+    xcb-util-keysyms xcb-util-renderutil libxkbcommon-x11
+```
+
+`QT_DEBUG_PLUGINS=1 python main.py` names any other library that is missing.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the test suite, the code layout,
+adding a distribution or a theme, and how the installers are built.
 
 ## License
 

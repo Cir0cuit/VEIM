@@ -13,6 +13,14 @@ APPDIR="$DIST/VEIM.AppDir"
 
 [ -d "$DIST/VEIM" ] || { echo "dist/VEIM is missing; run pyinstaller first" >&2; exit 1; }
 
+# Qt's xcb plugin needs these and many desktops do not install them. PyInstaller
+# copies them only when the build host has them, and skips them with a warning.
+for lib in libxcb-cursor.so.0 libxcb-icccm.so.4 libxcb-image.so.0 \
+           libxcb-keysyms.so.1 libxcb-render-util.so.0 libxkbcommon-x11.so.0; do
+    [ -n "$(find "$DIST/VEIM" -name "$lib*" -print -quit)" ] ||
+        { echo "dist/VEIM lacks $lib; install it on the build host" >&2; exit 1; }
+done
+
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications"
 

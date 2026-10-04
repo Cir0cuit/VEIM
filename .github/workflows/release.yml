@@ -68,6 +68,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller==6.22.3
 
+      # PyInstaller bundles the libraries Qt's xcb plugin links against only
+      # when it finds them on the build host; a missing one is skipped with a
+      # warning and the AppImage then aborts on desktops that lack it too.
+      - name: Install the xcb libraries the AppImage bundles
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxcb-xkb1 libxkbcommon-x11-0
+
       - name: Build the bundle
         run: pyinstaller --noconfirm --clean packaging/veim.spec
 
@@ -96,7 +108,6 @@ jobs:
       - name: Build the AppImage
         if: matrix.target == 'linux'
         run: |
-          sudo apt-get update
           sudo apt-get install -y libfuse2 desktop-file-utils
           curl -fsSL -o /usr/local/bin/appimagetool \
             https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
