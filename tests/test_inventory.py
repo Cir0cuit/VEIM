@@ -611,8 +611,13 @@ def test_a_file_tracked_meanwhile_is_neither_deleted_nor_adopted_again(drive_roo
 
 
 @pytest.mark.skipif(os.name != "nt", reason="NTFS junctions")
-def test_walk_does_not_follow_a_junction(managed_dir, tmp_path_factory):
+@pytest.mark.parametrize("isjunction", ["os.path.isjunction", "before Python 3.12"])
+def test_walk_does_not_follow_a_junction(managed_dir, tmp_path_factory, monkeypatch, isjunction):
+    """Regression: on Python 3.10 there is no os.path.isjunction, islink does
+    not see a junction, and the walk went through one off the drive."""
     import subprocess
+    if isjunction == "before Python 3.12":
+        monkeypatch.delattr(os.path, "isjunction", raising=False)
     outside = str(tmp_path_factory.mktemp("elsewhere"))
     _put(outside, "not-on-the-drive.iso")
     link = os.path.join(managed_dir, "link")

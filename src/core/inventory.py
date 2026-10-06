@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import time
 from dataclasses import asdict, dataclass, replace
 from typing import Callable, Dict, List, Optional, Any, Set, Tuple
@@ -126,8 +127,19 @@ class Tidied:
 
 
 def _is_link(path: str) -> bool:
+    """A symlink, or an NTFS junction - which os.walk follows even with
+    followlinks=False, and which os.path.islink does not call a link."""
+    if os.path.islink(path):
+        return True
     isjunction = getattr(os.path, "isjunction", None)     # Python 3.12+
-    return os.path.islink(path) or bool(isjunction and isjunction(path))
+    if isjunction is not None:
+        return isjunction(path)
+    # Before 3.12: a junction is a reparse point, which only Windows reports.
+    try:
+        attributes = os.lstat(path).st_file_attributes
+    except (OSError, AttributeError):
+        return False
+    return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 class InventoryManager:
