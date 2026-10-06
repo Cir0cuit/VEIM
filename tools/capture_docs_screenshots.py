@@ -3,8 +3,9 @@ r"""Render the screenshots the README embeds.
 Builds one drive carrying every state a row can be in: a release that has
 moved on, an update running in place, a fresh install on its way, two ISOs
 already current, one whose mirror could not be reached. Beside the managed
-ones sit two ISOs copied on by hand that VEIM offers to adopt, and one it
-does not recognise and leaves alone.
+ones, under "Not managed by VEIM", sit two ISOs copied on by hand that VEIM
+offers to adopt, one it does not recognise, and an EFI tool in a folder.
+The library is then shot once in every theme.
 
 The sidebar is made to report K:\ rather than the throwaway temporary
 directory the ISOs actually live in, so the images carry no local path. The
@@ -65,11 +66,13 @@ INSTALLED = [
 UPDATING = ("mint", "cinnamon")
 
 # Copied onto the drive by hand. The first two are named like official
-# downloads and are offered for adoption; the last is not, and is left alone.
+# downloads and are offered for adoption; the others are not, and are left
+# alone - one of them an EFI tool in a folder of its own.
 LOOSE = [
     ("debian-live-13.1.0-amd64-kde.iso", 3_300_000_000),
     ("caine14.0.iso", 4_900_000_000),
     ("clonezilla-office-custom.iso", 500_000_000),
+    ("tools/shellx64.efi", 1_200_000),
 ]
 
 
@@ -93,7 +96,9 @@ def build(app, theme: str, page: str):
     # Loose images live in the drive root: Managed_ISOs holds only what VEIM
     # manages, and anything else found there is moved out when it opens.
     for filename, size in LOOSE:
-        with open(os.path.join(workdir, filename), "wb") as handle:
+        path = os.path.join(workdir, *filename.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as handle:
             handle.truncate(size)
 
     # Downloads must never actually start while capturing, and the report of
@@ -119,14 +124,15 @@ def build(app, theme: str, page: str):
 
     # A fresh install from the catalog has no row yet, so it gets a card of
     # its own above the list.
-    card = DownloadingCard("ubuntu", "Ubuntu", "Desktop", on_cancel=lambda: None)
+    card = DownloadingCard("ubuntu", "Ubuntu Desktop", "", on_cancel=lambda: None)
     card.update_progress(make_task(4800, 0.38, 24.6, 122))
     library.download_cards["ubuntu::desktop"] = card
     library.download_layout.addWidget(card)
     library.lbl_downloads.show()
 
     library.refresh_installed_list()
-    window.resize(1180, 780)
+    # The size VEIM opens at on a screen with room for it.
+    window.resize(VEIMMainWindow.PREFERRED)
     window.show()
     pump(app)
 
@@ -188,14 +194,15 @@ def main() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
     load_fonts()
+    # Switching themes saves the choice; this run's choices are not yours.
+    prefs = tempfile.mkdtemp(prefix="veim_docs_prefs_")
+    theme_manager.pref_file = os.path.join(prefs, "theme")
 
+    # The library in every theme, named after it: theme-dark-modern.png.
     shots = [
         ("library.png", "Dark Modern", "library"),
         ("catalog.png", "Dark Modern", "catalog"),
-        ("theme-gruvbox.png", "Gruvbox Dark", "catalog"),
-        ("theme-amoled.png", "Amoled Black", "library"),
-        ("theme-solarized.png", "Solarized Light", "catalog"),
-    ]
+    ] + [(f"theme-{name.lower().replace(' ', '-')}.png", name, "library") for name in THEMES]
     for filename, theme, page in shots:
         assert theme in THEMES, f"unknown theme {theme!r}"
         window, workdir = build(app, theme, page)
@@ -213,6 +220,7 @@ def main() -> int:
         window.close()
         pump(app)
         shutil.rmtree(workdir, ignore_errors=True)
+    shutil.rmtree(prefs, ignore_errors=True)
     return 0
 
 

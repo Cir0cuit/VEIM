@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- The same mark for 32 px and below, drawn on the pixel grid: the
+       selected entry and two lines, no discs or shading to blur. -->
+  <rect width="32" height="32" rx="7" fill="#161b22"/>
+  <!-- an edge, so the plate holds its shape on a dark taskbar -->
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#3d444d"/>
+  <rect x="4" y="5" width="24" height="9" rx="2.5" fill="#2f81f7"/>
+  <rect x="7" y="8" width="3" height="3" fill="#ffffff"/>
+  <rect x="12" y="8" width="12" height="3" fill="#ffffff"/>
+  <rect x="7" y="17" width="16" height="3" fill="#8b949e"/>
+  <rect x="7" y="23" width="12" height="3" fill="#8b949e"/>
+</svg>

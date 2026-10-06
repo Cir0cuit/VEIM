@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Render src/assets/branding/veim.svg into the launcher icon formats.
 
-Run after editing the SVG:  python tools/build_icons.py
+16, 24 and 32 px come from veim-16.svg, veim-24.svg and veim-32.svg instead:
+the full mark scaled that small blurs into a smudge, so those sizes are drawn
+on their own pixel grids. Run after editing any of them:
+python tools/build_icons.py
 """
 import os
 import sys
@@ -23,12 +26,17 @@ def render_pngs():
     from PySide6.QtCore import Qt
 
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)
-    renderer = QSvgRenderer(SVG)
-    if not renderer.isValid():
-        raise SystemExit(f"cannot parse {SVG}")
+    def renderer_for(size):
+        own = os.path.join(BRANDING, f"veim-{size}.svg")
+        source = own if os.path.exists(own) else SVG
+        renderer = QSvgRenderer(source)
+        if not renderer.isValid():
+            raise SystemExit(f"cannot parse {source}")
+        return renderer
 
     paths = {}
     for size in PNG_SIZES:
+        renderer = renderer_for(size)
         image = QImage(size, size, QImage.Format.Format_ARGB32)
         image.fill(Qt.GlobalColor.transparent)
         painter = QPainter(image)

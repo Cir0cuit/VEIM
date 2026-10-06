@@ -2,9 +2,11 @@
 
 ## VEIM's own mark
 
-`veim.svg` is the master. Everything else is generated from it by
-`python tools/build_icons.py` and committed, because the installers need an
-icon before any Python is available to render one:
+`veim.svg` is the master: the Ventoy boot menu VEIM keeps, one entry selected.
+`veim-16.svg`, `veim-24.svg` and `veim-32.svg` are the same mark drawn on each
+size's pixel grid, because the master scaled that small blurs. Everything else
+is generated from them by `python tools/build_icons.py` and committed, because
+the installers need an icon before any Python is available to render one:
 
 | File | Used by |
 |---|---|

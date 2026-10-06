@@ -1953,3 +1953,26 @@ def test_rows_follow_the_catalogs_name_for_their_edition(workspace, qapp, tmp_pa
 def test_editions_are_named_without_repeating_themselves(key, flavor, name):
     from src.ui.dashboard import catalog_name
     assert catalog_name(registry.get_recipe(key), flavor) == name
+
+
+def test_a_fresh_download_is_named_as_its_row_will_be(workspace, qapp):
+    """Regression: the card read "Ubuntu (Ubuntu Desktop)"."""
+    lib = workspace.library
+    lib._on_catalog_install_request(registry.get_recipe("ubuntu"), "desktop")
+    qapp.processEvents()
+    assert lib.download_cards["ubuntu::desktop"].title.fullText() == "Ubuntu Desktop"
+
+
+def test_the_window_opens_at_a_size_the_screen_can_hold(themed, qapp):
+    """Regression: a fixed 1100x760 left "Not managed by VEIM" off the bottom,
+    and was the same on a screen too small for it."""
+    from PySide6.QtGui import QGuiApplication
+    from src.ui.app import VEIMMainWindow
+    window = VEIMMainWindow()
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    expected_w = max(VEIMMainWindow.MINIMUM.width(),
+                     min(VEIMMainWindow.PREFERRED.width(), int(area.width() * 0.9)))
+    expected_h = max(VEIMMainWindow.MINIMUM.height(),
+                     min(VEIMMainWindow.PREFERRED.height(), int(area.height() * 0.9)))
+    assert (window.width(), window.height()) == (expected_w, expected_h)
+    window.close()

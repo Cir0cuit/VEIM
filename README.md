@@ -28,7 +28,7 @@ USB drive, and keep every one of them up to date — all from one window.
 editions between them — and download any of them straight onto the drive. No
 download pages, no mirror lists, no copying files around afterwards.
 
-**Keeps it current.** One click checks every ISO on the drive against the
+**Keeps it current.** One click checks every ISO VEIM manages against the
 project that publishes it. Anything with a newer release gets an **Update**
 button that downloads the new version and swaps it in.
 
@@ -79,10 +79,13 @@ and closing the dialog simply means not now. The drive picker also has a
    A freshly made drive and one you have been using for years both work.
 2. **Installed** shows what is on the drive. If there are ISOs you copied there
    yourself, an **Adopt ISOs** button offers to take over the ones VEIM
-   recognises, so they can be checked and updated like the rest. The others
-   are listed below, where you can name them in the boot menu or delete them.
-   `Managed_ISOs/` keeps only what VEIM manages: anything else found there is
-   moved to the root of the drive, with a note of what moved and why.
+   recognises, so they can be checked and updated like the rest. Every image
+   VEIM does not manage is listed under **Not managed by VEIM**: the ones it
+   recognises can be adopted from their own row, the rest given a name in the
+   boot menu, and any of them deleted. `Managed_ISOs/` keeps only what VEIM
+   manages. An ISO VEIM recognises that you drop in there is adopted; anything
+   else is moved to the root of the drive, where Ventoy still boots it, and a
+   dialog lists what was adopted or moved and why.
 3. **Browse Catalog** — find something, choose an edition, press **Download**.
    The ISO lands on the drive, ready to boot. Queue as many as you like.
 4. Come back any time and press **Check All Updates**. Anything with a newer
@@ -103,7 +106,7 @@ Friendly, General Purpose, Rolling Release, Enthusiast, Gaming & Performance,
 Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
 
 - **Search** matches names, descriptions and edition names, so typing `KDE`
-  finds every KDE edition of every project, and `netinst` every network
+  finds every KDE edition of every project, and `net install` every network
   installer.
 - **One row per project.** The editions are in a selector on the row —
   Ubuntu's twelve flavors, Debian's nine images, Proxmox's four products —
@@ -253,20 +256,23 @@ The header sums it up — *2 updates available*, or *all up to date* — and any
 single row can be checked on its own.
 
 Above the list, the drive map shows the drive to scale: a block for each ISO,
-as wide as its file and coloured like its logo, then everything else on the
-drive, the space downloads in progress still need (hatched), and what is free.
+as wide as its file and coloured like its logo, then the images VEIM doesn't
+manage, everything else on the drive, what downloads in progress have written
+so far and still need (hatched), and what is free.
 Point at a block to see which ISO it is.
 
 The update button downloads the new release and replaces the old one. The progress
-shows on the row itself, with a **Cancel** button. The old ISO stays on the
+shows on the row itself, with a **Cancel** button; when a mirror does not say how
+big the file is, the row reads **N/A%** and counts the megabytes received. The old ISO stays on the
 drive and bootable until the new file has fully arrived and been verified;
 only then is it swapped in and the old one removed.
 
 ## ISOs you already have
 
-Already have ISOs on the drive? VEIM doesn't take them over on sight. When it
-finds files it recognises — named exactly the way the project itself names
-that download — the library shows an **Adopt ISOs** button, and you decide.
+Already have ISOs on the drive? Outside `Managed_ISOs/`, VEIM doesn't take
+them over on sight. When it finds files it recognises — named exactly the way
+the project itself names that download — the library shows an **Adopt ISOs**
+button with a count, and you decide.
 
 <div align="center">
 
@@ -290,8 +296,10 @@ official one would be "updated" — overwritten — at the next check.
 
 Whatever else turns up in `Managed_ISOs/` — left there by an earlier version
 of VEIM, or dropped in by you — is sorted out when VEIM opens the drive, and
-again whenever you switch back to it. An image VEIM recognises and can update
-is adopted where it lies. Everything else — an image it does not recognise or
+again whenever you come back to the VEIM window. An image VEIM recognises and
+can update is adopted (one in a subfolder is moved up into `Managed_ISOs/`
+first). A file that changed in the last minute is left for the next pass: it
+may still be copying. Everything else — an image it does not recognise or
 that you chose to leave alone, any other file, any folder of your own — moves
 to the root of the drive, where Ventoy boots it just the same. A file of the
 same name already in the root is never overwritten: the newcomer becomes
@@ -323,7 +331,7 @@ adopted by mistake.
 - **Resumable.** Downloads stream to a `.part` file. If the connection drops,
   VEIM waits and reconnects — 2, 5, 10, then 20 seconds, with the countdown
   shown on the row — and resumes from where it stopped. A link that keeps
-  dropping but keeps delivering is never given up on; only four attempts in a
+  dropping but keeps delivering is never given up on; only four retries in a
   row that get nowhere end in a failure. If you close VEIM, the transfer picks
   up where it stopped next time you press the button. Only cancelling on
   purpose throws the partial file away.
@@ -340,9 +348,11 @@ adopted by mistake.
   drive.
 - **Always the current release.** VEIM never downloads from a URL it
   remembered. Every transfer starts by reading the project's own release page
-  at that moment and taking the newest release by version number — never a
-  `-latest` alias, never a hardcoded folder, never an older release that
-  happened to be reachable when the current one wasn't. That is what stops a
+  at that moment and taking its current release — the newest by version
+  number, never a hardcoded folder, never an older release that happened to be
+  reachable when the current one wasn't. Where a project keeps a `latest` link
+  pointed at its release (NixOS, Garuda), VEIM follows it to the versioned file
+  and records that version. That is what stops a
   "latest" ISO quietly being two years old.
 - **Bootable as delivered.** Memtest86+ ships its image inside a `.zip`; VEIM
   unpacks the ISO and drops the archive.
@@ -351,11 +361,11 @@ adopted by mistake.
 
 | | |
 |---|---|
-| `Managed_ISOs/` | The ISOs VEIM downloads and updates, and nothing else, plus `veim_inventory.json`: what each file is, which version, and which files you asked to be left alone. Delete the JSON and you lose only the list — the ISOs stay, and recognised ones are adopted again. |
-| `ventoy/ventoy.json` | VEIM writes menu names here and nothing else: Ventoy searches the whole drive. Every other setting in the file is left as it is. Earlier versions of VEIM pointed Ventoy at `Managed_ISOs/` alone and wrote a default theme; opening a drive with this version takes both out again — a search root or theme you set yourself stays. |
+| `Managed_ISOs/` | The ISOs VEIM downloads and updates, and nothing else, plus `veim_inventory.json`: what each file is, which version, and which files you asked to be left alone. Delete the JSON and you lose only the list — the ISOs stay on the drive, recognised ones are adopted again, any it cannot recognise by name move to the drive root, and ISOs you left alone are offered again. |
+| `ventoy/ventoy.json` | VEIM writes menu names here, and when it moves a file it updates the entries that name it — persistence, auto install, password and the rest — so they follow. Nothing else: Ventoy searches the whole drive. Every other setting in the file is left as it is. Earlier versions of VEIM pointed Ventoy at `Managed_ISOs/` alone and wrote a default theme; opening a drive with this version takes both out again — a search root or theme you set yourself stays. |
 
-VEIM writes nowhere else on the drive. On your computer it keeps a log, the
-rendered logos and the note of which VEIM release you skipped, in
+VEIM writes nowhere else on the drive. On your computer it keeps a log and
+the note of which VEIM release you skipped, in
 `%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or
 `~/Library/Application Support/VEIM`.
 
@@ -370,9 +380,9 @@ each one shows a lower speed than it would alone; the total is the same. A
 slow mirror is the third possibility: VEIM downloads from the project's own
 official mirror, and some are simply busier than others.
 
-**"Connection lost, retrying in 10 s."** The link dropped. VEIM waits and
+**"Connection lost, retrying in 10 s (3 of 4)."** The link dropped. VEIM waits and
 reconnects on its own — 2, 5, 10, then 20 seconds — and resumes from where it
-stopped. A download only fails after four attempts in a row that get
+stopped. A download only fails after four retries in a row that get
 nowhere. If it does, press **Download** or **Update** again: the partial file
 is still there and the transfer resumes from it.
 
@@ -415,9 +425,11 @@ want in the menu, delete it — or keep it in a folder holding a file named
 
 **I edited `ventoy.json` by hand. Will VEIM keep my aliases?** Yes, except for
 the ISOs VEIM manages: those are always named for the distro, edition and
-version. Every other alias is kept as you wrote it, until the file it names is
-deleted, and VEIM reads the file afresh before each change, so edits made
-while it is open survive. A `ventoy.json` VEIM cannot read is never written
+version. Every other alias is kept as you wrote it, and follows its file when
+VEIM moves one. VEIM drops an alias only when you delete its file with
+**Delete**, or when it points into `Managed_ISOs/` at a file that is gone. It
+reads the file afresh before each change, so edits made while it is open
+survive. A `ventoy.json` VEIM cannot read is never written
 over; fix it, and menu names work again.
 
 **Something else went wrong.** The log is `veim.log` in
@@ -428,14 +440,18 @@ it stopped. Attach it to an [issue](https://github.com/Cir0cuit/VEIM/issues).
 
 ## Themes
 
-Dark Modern, Amoled Black, Gruvbox Dark, Cyberpunk, Nord, Dracula, Solarized
-Light and Clean Light — or **System**, which follows your desktop.
+Eight themes, picked from **Theme** at the bottom of the sidebar — or **System
+Match**, which uses Clean Light or Dark Modern to match your desktop, and
+switches when the desktop does.
 
 <div align="center">
 
-<img src="docs/images/theme-gruvbox.png" width="32%"> <img src="docs/images/theme-amoled.png" width="32%"> <img src="docs/images/theme-solarized.png" width="32%">
-
-<em>Gruvbox Dark · Amoled Black · Solarized Light</em>
+<table>
+<tr><td align="center"><img src="docs/images/theme-dark-modern.png" alt="Dark Modern"><br><sub>Dark Modern</sub></td><td align="center"><img src="docs/images/theme-amoled-black.png" alt="Amoled Black"><br><sub>Amoled Black</sub></td></tr>
+<tr><td align="center"><img src="docs/images/theme-gruvbox-dark.png" alt="Gruvbox Dark"><br><sub>Gruvbox Dark</sub></td><td align="center"><img src="docs/images/theme-cyberpunk.png" alt="Cyberpunk"><br><sub>Cyberpunk</sub></td></tr>
+<tr><td align="center"><img src="docs/images/theme-nord.png" alt="Nord"><br><sub>Nord</sub></td><td align="center"><img src="docs/images/theme-dracula.png" alt="Dracula"><br><sub>Dracula</sub></td></tr>
+<tr><td align="center"><img src="docs/images/theme-solarized-light.png" alt="Solarized Light"><br><sub>Solarized Light</sub></td><td align="center"><img src="docs/images/theme-clean-light.png" alt="Clean Light"><br><sub>Clean Light</sub></td></tr>
+</table>
 
 </div>
 

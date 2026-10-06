@@ -5,14 +5,16 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 1400-odd tests, no network and no display needed
+pytest                  # 1500-odd tests, no network and no display needed
 pytest -m network       # also resolve all 225 editions against live mirrors
 ```
 
 The offline suite runs headless on Qt's `offscreen` platform, and is what CI
 runs on Linux, Windows and macOS across Python 3.10 and 3.12. Network tests are
-excluded by default — a mirror having a bad day should not fail your build. Run
-them when you suspect scraper rot: they fail with the distribution named. The
+excluded by default — a mirror having a bad day should not fail your build. The
+Mirrors workflow (`.github/workflows/mirrors.yml`) runs them every Monday and can
+be started by hand; run them yourself when you suspect scraper rot: they fail
+with the distribution named. The
 live sweep also fails when a recipe reports a label ("latest", "current") in
 place of a version, when the filename a recipe would write is one that
 `iso_identity` reads back as a different entry, edition or version, and when a

@@ -533,10 +533,12 @@ class DashboardView(QWidget):
             row.begin_download()
             self._refresh_subtitle()
         else:
+            # Named as its row will be once it lands: "Ubuntu Desktop", not
+            # "Ubuntu (Ubuntu Desktop)".
             card = DownloadingCard(
                 key=recipe.key,
-                distro_name=recipe.name,
-                flavor_name=flavor_name,
+                distro_name=dname,
+                flavor_name="",
                 on_cancel=lambda k=ck: self._cancel_download(k),
             )
             self.download_cards[ck] = card

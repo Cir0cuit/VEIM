@@ -163,3 +163,25 @@ def test_the_installed_badge_is_readable(name):
     theme = THEMES[name]
     ratio = contrast(theme.success_fg, theme.success_soft)
     assert ratio >= 4.5, f"{name}: success_fg on success_soft is only {ratio:.1f}:1"
+
+
+def test_system_match_follows_the_desktop(qapp, monkeypatch):
+    """Regression: it asked darkdetect, which no build installed, and so was
+    always dark."""
+    from PySide6.QtCore import Qt
+    from src.ui import theme as theme_module
+    manager = theme_module.ThemeManager.__new__(theme_module.ThemeManager)
+    manager.selected_theme, manager.listeners = "System", []
+
+    class Hints:
+        def __init__(self, scheme):
+            self.scheme = scheme
+
+        def colorScheme(self):
+            return self.scheme
+
+    for scheme, expected in ((Qt.ColorScheme.Light, "Clean Light"),
+                             (Qt.ColorScheme.Dark, "Dark Modern"),
+                             (Qt.ColorScheme.Unknown, "Dark Modern")):
+        monkeypatch.setattr(qapp, "styleHints", lambda s=scheme: Hints(s))
+        assert manager._resolve_theme("System").name == expected

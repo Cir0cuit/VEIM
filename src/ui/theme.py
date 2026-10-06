@@ -819,12 +819,35 @@ class ThemeManager:
         self.listeners: List[Callable[[ThemeColors], None]] = []
 
     def _get_system_mode(self) -> str:
-        try:
-            import darkdetect
-            sys_dark = darkdetect.isDark()
-            return "Dark" if sys_dark else "Light"
-        except Exception:
-            return "Dark"
+        """"Light" or "Dark", as the desktop is set.
+
+        Read from Qt, which asks the platform itself. This used darkdetect,
+        which was never among the dependencies: every build fell back to
+        "Dark", and System Match never matched anything.
+        """
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        app = QGuiApplication.instance()
+        if app is not None and app.styleHints().colorScheme() == Qt.ColorScheme.Light:
+            return "Light"
+        return "Dark"
+
+    def follow_system(self):
+        """Resolve System Match now that Qt can say how the desktop is set -
+        this manager is built at import, before there is an application to
+        ask - and follow the desktop when it changes while VEIM is open."""
+        from PySide6.QtGui import QGuiApplication
+        app = QGuiApplication.instance()
+        if app is None or getattr(self, "_following", False):
+            return
+        self._following = True
+        app.styleHints().colorSchemeChanged.connect(lambda *_: self._system_changed())
+        self._system_changed()
+
+    def _system_changed(self):
+        if self.selected_theme == "System":
+            self.current = self._resolve_theme("System")
+            self._notify()
 
     def _resolve_theme(self, theme_name: str) -> ThemeColors:
         if theme_name == "System":
