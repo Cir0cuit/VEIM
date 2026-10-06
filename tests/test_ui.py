@@ -1560,4 +1560,9 @@ def test_rows_show_the_retry_countdown_instead_of_a_dead_speed(themed):
 
     task.note = ""
     row.update_progress(task)
-    assert row.meta.text().startswith("Downloading 22%")
+    assert row.meta.text().startswith("Downloading  ·  22%")
+
+    row.set_status_result("2026.10.06", "https://example.org/x.iso")
+    row.begin_download()
+    row.update_progress(task)
+    assert row.meta.text().startswith("Updating to 2026.10.06  ·  22%  ·  ")

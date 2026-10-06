@@ -49,7 +49,9 @@ def show_progress(bar: QProgressBar, meta: QLabel, task: DownloadTask,
         bar.setRange(0, 100)
         bar.setValue(pct)
         size = f"{done:.0f} / {task.total_bytes / (1024 ** 2):.0f} MB"
-        bits = [f"{lead} {pct}%".strip(), f"{task.speed_mbps:.1f} MB/s", size,
+        # The percentage is its own bit: glued to a lead that ends in a version
+        # ("Updating to 2026.10.06 45%") it reads as part of the version.
+        bits = [lead, f"{pct}%", f"{task.speed_mbps:.1f} MB/s", size,
                 f"{fmt_eta(task.eta_seconds)} left"]
     else:
         # Unknown total: an indeterminate bar rather than a fake 0%.
