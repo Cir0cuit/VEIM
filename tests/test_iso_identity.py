@@ -22,6 +22,8 @@ OFFICIAL = [
     ("Fedora-Xfce-Live-x86_64-41-1.4.iso", "fedora_spins", "xfce", "41"),
     ("Fedora-Sericea-ostree-x86_64-44-1.7.iso", "fedora_atomic", "sway-atomic", "44"),
     ("Fedora-COSMIC-Atomic-ostree-x86_64-44-1.7.iso", "fedora_atomic", "cosmic-atomic", "44"),
+    ("Fedora-Silverblue-Installer-45-1.3.x86_64.iso", "fedora_atomic", "silverblue", "45"),
+    ("Fedora-CosmicAtomic-Installer-45-1.3.x86_64.iso", "fedora_atomic", "cosmic-atomic", "45"),
     ("Fedora-Python-Classroom-Live-44-1.7.x86_64.iso", "fedora_labs", "python-classroom", "44"),
     ("ubuntucinnamon-26.04.1-desktop-amd64.iso", "ubuntu", "cinnamon", "26.04.1"),
     ("ubuntu-unity-26.04-desktop-amd64.iso", "ubuntu", "unity", "26.04"),
@@ -45,9 +47,12 @@ OFFICIAL = [
     ("CentOS-Stream-10-20260914.0-x86_64-dvd1.iso", "centos", "dvd", "10 (20260914.0)"),
     ("xcp-ng-8.3.0-20260806.iso", "xcpng", "standard", "8.3.0 (20260806)"),
     ("xcp-ng-8.3.0-20250606.2-netinstall.iso", "xcpng", "netinstall", "8.3.0 (20250606.2)"),
+    ("xcp-ng-8.2.1.iso", "xcpng", "standard", "8.2.1"),          # a series' first image is undated
+    ("xcp-ng-8.1.0-2-netinstall.iso", "xcpng", "netinstall", "8.1.0 (2)"),  # a respin
     ("openEuler-24.03-LTS-SP4-x86_64-dvd.iso", "openeuler", "lts", "24.03-LTS-SP4"),
     ("openEuler-25.09-netinst-x86_64-dvd.iso", "openeuler", "innovation-netinst", "25.09"),
     ("caine14.0.iso", "caine", "standard", "14.0"),
+    ("caine11.iso", "caine", "standard", "11"),
     ("supergrub2-classic-2.06s4-x86_64_efi-CD.iso", "supergrub2", "x86_64-efi", "2.06s4"),
     ("hrmpf-x86_64-20251231.iso", "hrmpf", "standard", "20251231"),
     ("ubuntu-26.04.1-desktop-amd64.iso", "ubuntu", "desktop", "26.04.1"),
@@ -59,7 +64,8 @@ OFFICIAL = [
     ("debian-live-13.7.0-amd64-kde.iso", "debian", "kde", "13.7.0"),
     ("pop-os_22.04_amd64_nvidia_58.iso", "popos", "nvidia", "22.04 (Build 58)"),
     ("Zorin-OS-18.1-Core-64-bit.iso", "zorin", "core", "18.1"),
-    ("Zorin-OS-18-Core-64-bit-r3.iso", "zorin", "core", "18"),
+    ("Zorin-OS-18-Core-64-bit-r3.iso", "zorin", "core", "18.0 r3"),
+    ("Zorin-OS-17.3-Education-64-bit-r2.iso", "zorin", "education", "17.3 r2"),
     ("neon-user-desktop-20260903-0454.iso", "kde_neon", "user", "20260903-0454"),
     ("openSUSE-Leap-15.6-DVD-x86_64-Current.iso", "opensuse", "leap-dvd", "15.6"),
     ("Leap-16.0-offline-installer-x86_64-Build178.27.install.iso", "opensuse", "leap-dvd",
@@ -75,7 +81,8 @@ OFFICIAL = [
     ("Rocky-10.2-x86_64-boot.iso", "rocky", "boot", "10.2"),
     ("AlmaLinux-10.2-x86_64-minimal.iso", "almalinux", "minimal", "10.2"),
     ("pop-os_24.04_amd64_intel_20.iso", "popos", "intel", "24.04 (Build 20)"),
-    ("elementaryos-8.1-stable-amd64.20260219.iso", "elementary", "stable", "8.1"),
+    ("pop-os_24.04_amd64_generic_28.iso", "popos", "intel", "24.04 (Build 28)"),
+    ("elementaryos-8.1-stable-amd64.20260219.iso", "elementary", "stable", "8.1 (20260219)"),
     ("TUXEDO-OS-202609161651.iso", "tuxedo", "standard", "202609161651"),
     ("Mageia-10-x86_64.iso", "mageia", "classic-dvd", "10"),
     ("Mageia-10-Live-Plasma-x86_64.iso", "mageia", "live-plasma", "10"),
@@ -86,6 +93,8 @@ OFFICIAL = [
     ("archlinux-2026.09.01-x86_64.iso", "arch", "standard", "2026.09.01"),
     ("manjaro-kde-26.1.2-260910-linux71.iso", "manjaro", "plasma", "26.1.2"),
     ("EndeavourOS_Titan-Nova-2026.08.15.iso", "endeavour", "standard", "2026.08.15"),
+    ("EndeavourOS_Titan-Nova-2026.08.15_R1.iso", "endeavour", "standard", "2026.08.15 R1"),
+    ("EndeavourOS_Endeavour_neo-2024.09.22.iso", "endeavour", "standard", "2024.09.22"),
     ("artix-base-runit-20260813-x86_64.iso", "artix", "base-runit", "20260813"),
     ("void-live-x86_64-20250202-xfce.iso", "void", "xfce", "20250202"),
     ("void-live-x86_64-musl-20250202-base.iso", "void", "musl-base", "20250202"),
@@ -100,6 +109,9 @@ OFFICIAL = [
     ("kali-linux-2026.2-installer-amd64.iso", "kali", "installer", "2026.2"),
     ("kali-linux-2026.2-installer-purple-amd64.iso", "kali", "purple", "2026.2"),
     ("Parrot-security-7.3_amd64.iso", "parrot", "security", "7.3"),
+    # VEIM's own names: upstream's carry no version (see recipes/gaming.py).
+    ("bazzite-stable-live-20261006-amd64.iso", "bazzite", "desktop-kde", "20261006"),
+    ("bazzite-deck-stable-live-20261006-amd64.iso", "bazzite", "deck-kde", "20261006"),
     ("tails-amd64-7.13.iso", "tails", "standard", "7.13"),
     ("HackerOS-V5.0.iso", "hackeros", "official", "5.0"),
     ("HackerOS-V4.9-Cybersecurity.iso", "hackeros", "cybersecurity", "4.9"),
@@ -108,18 +120,32 @@ OFFICIAL = [
     ("clonezilla-live-3.3.3-37-amd64.iso", "clonezilla", "stable", "3.3.3-37"),
     ("systemrescue-13.02-amd64.iso", "systemrescue", "standard", "13.02"),
     ("grml-small-2026.09-amd64.iso", "grml", "small", "2026.09"),
+    ("grml-full-2026.09.1-amd64.iso", "grml", "full", "2026.09.1"),
     ("memtest86plus-8.10-x86_64.grub.iso", "memtest", "grub", "8.10"),
+    # VEIM's own names: upstream's carry no version (see recipes/rescue.py).
+    ("netboot.xyz-3.0.3.iso", "netboot", "standard", "3.0.3"),
+    ("netboot.xyz-sb-3.0.3.iso", "netboot", "sb", "3.0.3"),
+    ("netboot.xyz-3.0.3.efi", "netboot", "efi", "3.0.3"),
+    ("netboot.xyz-snp-3.0.3.efi", "netboot", "snp", "3.0.3"),
+    ("netboot.xyz-arm64-3.0.3.efi", "netboot", "arm64", "3.0.3"),
     ("proxmox-ve_9.2-1.iso", "proxmox", "installer", "9.2-1"),
     ("gparted-live-1.8.1-6-amd64.iso", "gparted", "standard", "1.8.1-6"),
     ("rescuezilla-2.6.2-64bit.noble.iso", "rescuezilla", "standard", "2.6.2"),
+    ("rescuezilla-2.6.2-64bit.resolute.iso", "rescuezilla", "standard", "2.6.2"),
+    ("shredos-2025.11_31_x86-64_v0.42_20260716.img", "shredos", "standard", "2025.11_31_x86-64_0.42"),
+    ("shredos-2024.11_27_x86-64_0.38_20250123.img", "shredos", "standard", "2024.11_27_x86-64_0.38"),
+    ("shredos-2024.02.2_26.0_x86-64_0.37_20240610.img", "shredos", "standard", "2024.02.2_26.0_x86-64_0.37"),
     ("BookwormPup64_10.0.12.iso", "puppy", "bookworm", "10.0.12"),
     ("Trixiepup64_Wayland-11.4.iso", "puppy", "trixie", "11.4"),
+    ("TrixiePup64-Wayland-2606-261003.iso", "puppy", "trixie", "2606-261003"),
     ("CorePure64-15.0.iso", "tinycore", "corepure64", "15.0"),
     ("alpine-extended-3.24.2-x86_64.iso", "alpine", "extended", "3.24.2"),
     ("sparkylinux-8.4-x86_64-minimalcli.iso", "sparky", "minimalcli", "8.4"),
     ("antiX-26_x64-core.iso", "antix", "core", "26"),
     ("q4os-6.9-x64.r1.iso", "q4os", "plasma", "6.9"),
     ("q4os-6.9-x64-tde.r1.iso", "q4os", "trinity", "6.9"),
+    ("q4os-7.0-x64-plasma.r1.iso", "q4os", "plasma", "7.0"),
+    ("q4os-7.0-x64-trinity.r1.iso", "q4os", "trinity", "7.0"),
 ]
 
 # Not adoptable, each for its own reason.
@@ -130,16 +156,26 @@ LEFT_ALONE = [
     "ubuntu-26.04.1-desktop-amd64 (1).iso",
     "kali-linux-2026.2-live-amd64.iso",             # real, but torrent-only: nothing to update from
     "linux-lite-8.0-rc2-64bit.iso",                 # a release candidate
+    "Zorin-OS-18-Core-Beta-64-bit-r1.iso",          # a beta
     "FreeBSD-15.2-BETA1-amd64-disc1.iso",
     "CentOS-Stream-10-latest-x86_64-dvd1.iso",
     "metal-amd64.iso",                              # Talos, under the name that says nothing
+    "xcp-ng-8.3.0-rc1.iso",                         # a release candidate
     "supergrub2-classic-2.06s5-beta1-multiarch-CD.iso",
+    "Fedora-Silverblue-Installer-45_Beta-1.3.x86_64.iso",  # a beta
+    "q4os-7.0-x64-plasma.r8-testing.iso",           # a testing build
     "Win11_25H2_English_x64.iso",
     "HBCD_PE_x64.iso",
     "memtest.iso",
+    "netboot.xyz-sb-3.0.3.efi",                     # no such edition: the ISO is the Secure Boot one
+    "netboot.xyz-arm64-3.0.3.iso",                  # published, but not in the catalog
+    "shredos-2025.11_31_x86-64_v0.42_20260716_lite.img",  # an edition the catalog does not offer
+    "shredos-2025.11_31_i686_v0.42_20260716_lite.img",
     # Official, but the name is the same for every release.
     "netboot.xyz.iso",
+    "netboot.xyz.efi",
     "bazzite-stable-amd64.iso",
+    "bazzite-stable-live-amd64.iso",
     "openSUSE-Tumbleweed-DVD-x86_64-Current.iso",
     "latest-nixos-minimal-x86_64-linux.iso",
     "Rocky-10-latest-x86_64-dvd.iso",

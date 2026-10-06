@@ -1,8 +1,45 @@
 import re
 from src.core.recipe_base import (
-    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, SOURCEFORGE_PATHS, sourceforge_rss,
-    version_key)
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, SOURCEFORGE_PATHS, published_sha256, sha256_in,
+    sourceforge_rss, version_key)
 from src.core.logger import log
+
+
+# SourceForge answers a browser's user agent with a 403 page, so checksums
+# are asked for as curl, as sourceforge_rss does.
+_CURL = {"User-Agent": "curl/8.4.0"}
+
+
+def _github_sha256(asset: dict) -> str:
+    """The SHA-256 GitHub records for a release asset; "" for one uploaded
+    before GitHub kept a digest."""
+    digest = asset.get("digest") or ""
+    return digest[len("sha256:"):] if digest.startswith("sha256:") else ""
+
+
+def _checksums_release(session, distro: str, url: str, pattern: str, filename: str):
+    """(version, filename, sha256) of the newest image a CHECKSUMS.TXT names.
+
+    Clonezilla and GParted Live publish one per branch, naming the branch's
+    current build under MD5SUMS, SHA1SUMS, SHA256SUMS, SHA512SUMS, B2SUMS and
+    B3SUMS headings. It names one build today; every match is still compared
+    by number, so a file that lists two gives the newer rather than the first.
+    """
+    try:
+        resp = session.get(url, timeout=15)
+        resp.raise_for_status()
+    except Exception as e:
+        log.warning(f"[{distro}] Scrape error: {e}")
+        raise ScrapeError(distro, f"could not read {url} ({e})")
+    versions = set(re.findall(pattern, resp.text))
+    if not versions:
+        raise ScrapeError(distro, f"{url} names no image")
+    ver = max(versions, key=version_key)
+    fname = filename.format(ver)
+    # A BLAKE3 sum is 64 hex digits as well, so only the SHA256SUMS block will do.
+    block = resp.text.partition("### SHA256SUMS:")[2].partition("###")[0]
+    return ver, fname, sha256_in(block, fname)
+
 
 class ClonezillaRecipe(DistroRecipe):
     key = "clonezilla"
@@ -15,24 +52,18 @@ class ClonezillaRecipe(DistroRecipe):
     ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        session = self.get_session()
-        branch = "alternative" if flavor_id.lower() == "alternative" else "stable"
-        url = f"https://clonezilla.org/downloads/{branch}/data/CHECKSUMS.TXT"
+        if flavor_id not in ("alternative", "stable"):
+            raise ScrapeError(self.name, f"unknown Clonezilla image {flavor_id!r}")
+        # The branch's own CHECKSUMS.TXT is what clonezilla.org links as that
+        # branch's current build; the testing branches have their own.
+        ver, fname, sha256 = _checksums_release(
+            self.get_session(), self.name,
+            f"https://clonezilla.org/downloads/{flavor_id}/data/CHECKSUMS.TXT",
+            r'clonezilla-live-(\S+?)-amd64\.iso', "clonezilla-live-{}-amd64.iso")
+        return DownloadInfo(
+            version=ver, filename=fname, sha256=sha256,
+            url=f"https://downloads.sourceforge.net/project/clonezilla/clonezilla_live_{flavor_id}/{ver}/{fname}")
 
-        try:
-            r = session.get(url, timeout=10)
-            if r.status_code == 200:
-                m = re.search(r'clonezilla-live-([^\s]+)-amd64\.iso', r.text)
-                if m:
-                    ver = m.group(1)
-                    fname = f"clonezilla-live-{ver}-amd64.iso"
-                    dl_branch = "clonezilla_live_alternative" if branch == "alternative" else "clonezilla_live_stable"
-                    dl_url = f"https://downloads.sourceforge.net/project/clonezilla/{dl_branch}/{ver}/{fname}"
-                    return DownloadInfo(version=ver, url=dl_url, filename=fname)
-        except Exception as e:
-            log.warning(f"[Clonezilla] Scrape error: {e}")
-
-        raise ScrapeError(self.name, f"no current {branch} release listed for Clonezilla")
 
 class GPartedRecipe(DistroRecipe):
     key = "gparted"
@@ -44,20 +75,15 @@ class GPartedRecipe(DistroRecipe):
     ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        session = self.get_session()
-        try:
-            r = session.get("https://gparted.org/download.php", timeout=10)
-            if r.status_code == 200:
-                m = re.search(r'gparted-live-([\d\.\-]+)-amd64\.iso', r.text)
-                if m:
-                    ver = m.group(1)
-                    fname = f"gparted-live-{ver}-amd64.iso"
-                    dl_url = f"https://downloads.sourceforge.net/project/gparted/gparted-live-stable/{ver}/{fname}"
-                    return DownloadInfo(version=ver, url=dl_url, filename=fname)
-        except Exception as e:
-            log.warning(f"[GParted] Scrape error: {e}")
+        # The CHECKSUMS.TXT gparted.org/download.php links for the stable
+        # branch, rather than the first ISO named anywhere on that page.
+        ver, fname, sha256 = _checksums_release(
+            self.get_session(), self.name, "https://gparted.org/gparted-live/stable/CHECKSUMS.TXT",
+            r'gparted-live-(\d+(?:\.\d+)*-\d+)-amd64\.iso', "gparted-live-{}-amd64.iso")
+        return DownloadInfo(
+            version=ver, filename=fname, sha256=sha256,
+            url=f"https://downloads.sourceforge.net/project/gparted/gparted-live-stable/{ver}/{fname}")
 
-        raise ScrapeError(self.name, "no current stable release listed for GParted Live")
 
 class RescuezillaRecipe(DistroRecipe):
     key = "rescuezilla"
@@ -68,13 +94,31 @@ class RescuezillaRecipe(DistroRecipe):
         FlavorInfo("standard", "Standard 64-bit")
     ]
 
+    API = "https://api.github.com/repos/rescuezilla/rescuezilla/releases/latest"
+
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        tag, assets = self.github_latest("rescuezilla/rescuezilla")
-        for asset in assets:
-            aname = asset.get("name", "")
-            if aname.endswith(".iso") and "64bit" in aname:
-                return DownloadInfo(version=tag, url=asset.get("browser_download_url"), filename=aname)
-        raise ScrapeError(self.name, "the Rescuezilla release feed listed no 64-bit ISO")
+        # Each release is built on several Ubuntu bases, one ISO apiece
+        # (rescuezilla-2.6.2-64bit.noble.iso ... .resolute.iso), and GitHub
+        # lists them alphabetically: the first 64-bit ISO is whichever codename
+        # sorts first - noble for 2.6.2, focal for 2.6.1 - not the newest base
+        # nor the one upstream recommends. The release notes open by naming
+        # that one, which github_latest does not return, hence the API here.
+        try:
+            r = self.get_session().get(self.API, timeout=15)
+            r.raise_for_status()
+            release = r.json()
+        except Exception as e:
+            log.warning(f"[Rescuezilla] GitHub API error: {e}")
+            raise ScrapeError(self.name, f"could not read the Rescuezilla release feed ({e})")
+        tag = str(release.get("tag_name", ""))
+        m = re.search(rf'rescuezilla-{re.escape(tag)}-64bit\.[a-z]+\.iso', release.get("body") or "")
+        assets = {a.get("name"): a for a in release.get("assets", [])}
+        if not tag or not m or m.group(0) not in assets:
+            raise ScrapeError(self.name, f"the Rescuezilla {tag} release notes name no 64-bit ISO it carries")
+        asset = assets[m.group(0)]
+        return DownloadInfo(version=tag, url=asset.get("browser_download_url"),
+                            filename=m.group(0), sha256=_github_sha256(asset))
+
 
 class ShredOSRecipe(DistroRecipe):
     key = "shredos"
@@ -87,28 +131,59 @@ class ShredOSRecipe(DistroRecipe):
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         tag, assets = self.github_latest("PartialVolume/shredos.x86_64")
+        # A release carries i686 and x86-64 builds, each as .img and .iso, in
+        # full, _lite and _plus-partition editions. The whole name pins the
+        # full x86-64 .img, which a substring test only found because GitHub
+        # happens to list it first. 0.37 and 0.38 had no "v" before their
+        # number, and 0.37 a Buildroot point release (2024.02.2_26.0).
         for asset in assets:
             aname = asset.get("name", "")
-            if (aname.endswith(".img") or aname.endswith(".iso")) and "x86-64" in aname:
-                return DownloadInfo(version=tag, url=asset.get("browser_download_url"), filename=aname)
+            if re.fullmatch(r'shredos-\d{4}\.\d+(?:\.\d+)?_\d+(?:\.\d+)?_x86-64_v?\d+(?:\.\d+)*_\d{8}\.img', aname):
+                return DownloadInfo(version=tag, url=asset.get("browser_download_url"), filename=aname,
+                                    sha256=_github_sha256(asset))
         raise ScrapeError(self.name, "the ShredOS release feed listed no x86-64 image")
+
 
 class NetbootRecipe(DistroRecipe):
     key = "netboot"
     name = "netboot.xyz"
-    description = "Boot almost any operating system directly over the network via iPXE."
+    description = ("Boot almost any operating system directly over the network via iPXE; "
+                   "the .efi editions start in UEFI mode only.")
 
     FLAVORS = [
-        FlavorInfo("standard", "Standard ISO")
+        FlavorInfo("standard", "Standard ISO"),
+        FlavorInfo("sb", "Secure Boot ISO"),
+        FlavorInfo("efi", "UEFI (.efi)"),
+        FlavorInfo("snp", "UEFI SNP (.efi)"),
+        FlavorInfo("arm64", "ARM64 UEFI (.efi)"),
     ]
 
+    # flavor -> the part of upstream's name between "netboot.xyz" and the extension
+    _ASSET = {"standard": ("", ".iso"), "sb": ("-sb", ".iso"), "efi": ("", ".efi"),
+              "snp": ("-snp", ".efi"), "arm64": ("-arm64", ".efi")}
+
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
+        if flavor_id not in self._ASSET:
+            raise ScrapeError(self.name, f"unknown netboot.xyz image {flavor_id!r}")
+        edition, ext = self._ASSET[flavor_id]
+        aname = f"netboot.xyz{edition}{ext}"
         tag, assets = self.github_latest("netbootxyz/netboot.xyz")
-        for asset in assets:
-            aname = asset.get("name", "")
-            if aname == "netboot.xyz.iso":
-                return DownloadInfo(version=tag, url=asset.get("browser_download_url"), filename=aname)
-        raise ScrapeError(self.name, "the netboot.xyz release feed listed no netboot.xyz.iso asset")
+        if not re.fullmatch(r'v?\d+(\.\d+)+', tag):
+            raise ScrapeError(self.name, f"the latest netboot.xyz release is tagged {tag!r}, not a version")
+        urls = {a.get("name"): a.get("browser_download_url") for a in assets}
+        if aname not in urls:
+            raise ScrapeError(self.name, f"the latest netboot.xyz release carries no {aname}")
+
+        # A checksum the release does not list is a download left unverified,
+        # not a release refused - as for Bazzite.
+        sums_url = urls.get("netboot.xyz-sha256-checksums.txt")
+        sha256 = published_sha256(self.get_session(), sums_url, aname, self.name) if sums_url else ""
+
+        # Upstream's names are the same for every release; saved as they are,
+        # nothing on the drive would say which one it holds.
+        version = tag.lstrip("v")
+        return DownloadInfo(version=version, url=urls[aname], sha256=sha256,
+                            filename=f"netboot.xyz{edition}-{version}{ext}")
 
 
 class SystemRescueRecipe(DistroRecipe):
@@ -123,22 +198,28 @@ class SystemRescueRecipe(DistroRecipe):
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
         try:
-            feed = sourceforge_rss(session, "systemrescuecd", "path=/sysresccd-x86")
-            versions = sorted(
-                set(re.findall(r'systemrescue-(\d+(?:\.\d+)*)-amd64\.iso', feed)),
-                key=lambda v: tuple(int(p) for p in v.split(".")))
-            if versions:
-                ver = versions[-1]
-                fname = f"systemrescue-{ver}-amd64.iso"
-                link = re.search(rf'(https://[^\s<>"]*{re.escape(fname)})[^\s<>"]*', feed)
-                url = link.group(1) if link else (
-                    "https://downloads.sourceforge.net/project/systemrescuecd/"
-                    f"sysresccd-x86/{ver}/{fname}")
-                return DownloadInfo(version=ver, url=url, filename=fname)
+            paths = re.findall(SOURCEFORGE_PATHS,
+                               sourceforge_rss(session, "systemrescuecd", "path=/sysresccd-x86"))
         except Exception as e:
             log.warning(f"[SystemRescue] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read the SourceForge file list ({e})")
 
-        raise ScrapeError(self.name, "no current release listed on SourceForge")
+        # The newest release folder first, then its image. The newest image
+        # under today's name is the newest release only while the name holds:
+        # a next release named differently would leave the two dozen older
+        # ones still in the feed offering the previous one. A folder that is
+        # not a plain version would be a pre-release.
+        folders = {m.group(1) for path in paths
+                   if (m := re.fullmatch(r'/sysresccd-x86/(\d+(?:\.\d+)+)/[^/]+', path))}
+        if not folders:
+            raise ScrapeError(self.name, "no release listed on SourceForge")
+        ver = max(folders, key=version_key)
+        fname = f"systemrescue-{ver}-amd64.iso"
+        if f"/sysresccd-x86/{ver}/{fname}" not in paths:
+            raise ScrapeError(self.name, f"SystemRescue {ver} lists no {fname} on SourceForge")
+        url = f"https://downloads.sourceforge.net/project/systemrescuecd/sysresccd-x86/{ver}/{fname}"
+        return DownloadInfo(version=ver, url=url, filename=fname,
+                            sha256=published_sha256(session, url + ".sha256", fname, self.name, headers=_CURL))
 
 
 class MemtestRecipe(DistroRecipe):
@@ -162,25 +243,27 @@ class MemtestRecipe(DistroRecipe):
         try:
             page = session.get("https://www.memtest.org/", timeout=25)
             page.raise_for_status()
-            versions = sorted(
-                set(re.findall(rf'mt86plus_(\d+(?:\.\d+)*)_{re.escape(suffix)}\.iso\.zip',
-                               page.text)),
-                key=lambda v: tuple(int(p) for p in v.split(".")))
-            if versions:
-                ver = versions[-1]
-                zip_name = f"mt86plus_{ver}_{suffix}.iso.zip"
-                # Upstream publishes no plain .iso, and Ventoy cannot boot a .zip,
-                # so the downloader unpacks this one.
-                return DownloadInfo(
-                    version=ver,
-                    url=f"https://www.memtest.org/download/v{ver}/{zip_name}",
-                    filename=f"memtest86plus-{ver}-{suffix}.iso",
-                    archive="zip",
-                )
+            versions = set(re.findall(rf'mt86plus_(\d+(?:\.\d+)*)_{re.escape(suffix)}\.iso\.zip',
+                                      page.text))
         except Exception as e:
             log.warning(f"[Memtest86+] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read memtest.org ({e})")
+        if not versions:
+            raise ScrapeError(self.name, "no current release listed on memtest.org")
 
-        raise ScrapeError(self.name, "no current release listed on memtest.org")
+        ver = max(versions, key=version_key)
+        zip_name = f"mt86plus_{ver}_{suffix}.iso.zip"
+        # Upstream publishes no plain .iso, and Ventoy cannot boot a .zip, so
+        # the downloader unpacks this one - after checking the .zip, which is
+        # what upstream's sum is of.
+        return DownloadInfo(
+            version=ver,
+            url=f"https://www.memtest.org/download/v{ver}/{zip_name}",
+            filename=f"memtest86plus-{ver}-{suffix}.iso",
+            archive="zip",
+            sha256=published_sha256(session, f"https://www.memtest.org/download/v{ver}/sha256sum.txt", zip_name,
+                                    self.name, headers=_CURL),
+        )
 
 
 class SuperGrub2Recipe(DistroRecipe):
@@ -214,19 +297,25 @@ class SuperGrub2Recipe(DistroRecipe):
             log.warning(f"[Super GRUB2 Disk] Scrape error: {e}")
             raise ScrapeError(self.name, f"could not read the SourceForge file list ({e})")
 
+        # The newest release folder first, then its image for the platform.
+        # The newest image under today's name is the newest release only
+        # while the name holds: a next release named differently would leave
+        # this one's files, still in the feed, offering this one.
         # Finals only: betas are published as "2.06s5-beta1" in the same tree.
-        found = {}
-        for path in paths:
-            m = re.fullmatch(rf'.*/(supergrub2-classic-(\d+\.\d+s\d+)-{platform}-CD\.iso)', path)
-            if m:
-                found[m.group(2)] = path
-        if not found:
-            raise ScrapeError(self.name, f"no released {platform} image listed on SourceForge")
-
-        ver = max(found, key=version_key)
-        path = found[ver]
-        return DownloadInfo(version=ver, filename=path.rsplit("/", 1)[-1],
-                            url=f"https://downloads.sourceforge.net/project/supergrub2{path}")
+        finals = {m.group(1) for path in paths if (m := re.fullmatch(r'/(\d+\.\d+s\d+)/.+', path))}
+        if not finals:
+            raise ScrapeError(self.name, "no released Super GRUB2 Disk listed on SourceForge")
+        ver = max(finals, key=version_key)
+        fname = f"supergrub2-classic-{ver}-{platform}-CD.iso"
+        path = next((p for p in paths if p.startswith(f"/{ver}/") and p.endswith("/" + fname)), None)
+        if path is None:
+            raise ScrapeError(self.name, f"Super GRUB2 Disk {ver} lists no {fname} on SourceForge")
+        return DownloadInfo(
+            version=ver, filename=fname,
+            url=f"https://downloads.sourceforge.net/project/supergrub2{path}",
+            sha256=published_sha256(
+                session, f"https://downloads.sourceforge.net/project/supergrub2/{ver}/SHA256SUMS", fname,
+                self.name, headers=_CURL))
 
 
 class HrmpfRecipe(DistroRecipe):
@@ -242,5 +331,5 @@ class HrmpfRecipe(DistroRecipe):
             m = re.fullmatch(r'hrmpf-x86_64-(\d{8})\.iso', asset.get("name", ""))
             if m:
                 return DownloadInfo(version=m.group(1), url=asset.get("browser_download_url"),
-                                    filename=asset["name"])
+                                    filename=asset["name"], sha256=_github_sha256(asset))
         raise ScrapeError(self.name, "the latest hrmpf release carries no x86_64 ISO")

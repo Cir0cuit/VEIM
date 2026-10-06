@@ -13,11 +13,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from src.core.downloader import DownloadTask
 from src.core.recipe_base import DistroRecipe, FlavorInfo
 from src.recipes.registry import registry
 from src.ui.components import (
-    Row, Pill, FlowLayout, FlavorCombo, make_button, fmt_eta, EmptyState, restyle,
-    set_button_kind)
+    Row, FlowLayout, FlavorCombo, make_button, EmptyState, restyle,
+    set_button_kind, show_progress)
 
 
 class CatalogRow(Row):
@@ -47,21 +48,30 @@ class CatalogRow(Row):
 
         self.combo: Optional[QComboBox] = None
         if len(self.flavors) > 1:
+            # As wide as its longest edition and no wider: a floor of 210px
+            # left a three-letter list padded out to a field.
             self.combo = FlavorCombo()
-            self.combo.setMinimumWidth(210)
+            self.combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
             for f in self.flavors:
                 self.combo.addItem(f.name, f.id)
             self.combo.currentIndexChanged.connect(self._sync_state)
             self.add_action(self.combo)
 
         # What you already have should stand out in a list of 64.
-        self.badge = Pill("Installed", "accent")
+        self.badge = QLabel("Installed")
+        self.badge.setObjectName("installedBadge")
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.badge.hide()
         self.add_action(self.badge)
 
         self.btn = make_button("Download", "tonal", self._on_button)
         self.btn.setMinimumWidth(118)
         self.add_action(self.btn)
+        # The badge stands where the button would, at its size, so it reads as
+        # the same control in another state and switching the selector between
+        # an installed edition and another moves nothing.
+        self.badge.setMinimumSize(self.btn.minimumWidth(), self.btn.minimumHeight())
+        self.badge.setSizePolicy(self.btn.sizePolicy())
 
         # Progress for a transfer started from this row, so queueing one does
         # not mean leaving the catalog to watch it.
@@ -77,9 +87,13 @@ class CatalogRow(Row):
         self.note.hide()
         self.text_col.addWidget(self.note)
 
-        # flavor id -> (percent, MB/s, seconds remaining). Keyed per flavor so
-        # the selector always shows the state of the edition on screen.
-        self._downloading: Dict[str, tuple] = {}
+        # flavor id -> its transfer, or None while the release is still being
+        # looked up. Keyed per flavor so the selector always shows the state of
+        # the edition on screen.
+        self._downloading: Dict[str, Optional[DownloadTask]] = {}
+        # flavor id -> why its last download failed. Per flavor for the same
+        # reason: switching editions shows that edition's state, and only its.
+        self._errors: Dict[str, str] = {}
 
         self._sync_state()
 
@@ -94,38 +108,38 @@ class CatalogRow(Row):
         flavor = self.current_flavor()
 
         if flavor in self._downloading:
-            pct, mbps, eta = self._downloading[flavor]
+            task = self._downloading[flavor]
             self.badge.hide()
             self.progress.show()
-            if pct < 0:
-                # Size not known yet - indeterminate beats a misleading 0%.
+            if task is None:
+                # Looking the release up, or connecting: nothing has arrived.
                 self.progress.setRange(0, 0)
                 self.note.setText("Starting…")
             else:
-                self.progress.setRange(0, 100)
-                self.progress.setValue(pct)
-                bits = [f"Downloading {pct}%"]
-                if mbps > 0:
-                    bits.append(f"{mbps:.1f} MB/s")
-                if eta > 0:
-                    bits.append(f"{fmt_eta(eta)} left")
-                self.note.setText("  ·  ".join(bits))
+                show_progress(self.progress, self.note, task)
             restyle(self.note, "rowMeta")
             self.note.show()
+            self.btn.show()
             self.btn.setText("Cancel")
             set_button_kind(self.btn, "danger")
             return
 
         self.progress.hide()
+        # What another edition is doing is not this one's: its progress line
+        # went with it, and an error stays with the edition that failed.
+        error = self._errors.get(flavor, "")
+        self.note.setText(error)
+        restyle(self.note, "errorText" if error else "rowMeta")
+        self.note.setVisible(bool(error))
 
         is_installed = flavor in self._installed
-        # Downloading a multi-gigabyte image you already have is not the row's
-        # main action.
-        set_button_kind(self.btn, "quiet" if is_installed else "tonal")
+        # An edition on the drive has nothing to do here: the badge says so,
+        # and its updates come from its row in the library. A "Reinstall" of
+        # the same release only took room the row's other parts needed.
         self.badge.setVisible(is_installed)
-        self.btn.setText("Reinstall" if is_installed else "Download")
-        # An error note stays up until the row is used again.
-        self.note.setVisible(bool(self.note.text()))
+        self.btn.setVisible(not is_installed)
+        set_button_kind(self.btn, "tonal")
+        self.btn.setText("Download")
 
     def set_installed_flavors(self, flavors: set):
         self._installed = flavors
@@ -133,17 +147,19 @@ class CatalogRow(Row):
 
     # -- download state ---------------------------------------------------
 
-    def set_downloading(self, flavor_id: str, pct: int = -1,
-                        mbps: float = 0.0, eta: int = 0):
-        self._downloading[flavor_id] = (pct, mbps, eta)
+    def set_downloading(self, flavor_id: str, task: Optional[DownloadTask] = None):
+        """Show `flavor_id` as downloading: starting, or `task`'s progress."""
+        self._downloading[flavor_id] = task
+        self._errors.pop(flavor_id, None)
         if flavor_id == self.current_flavor():
-            self.note.setText("")
             self._sync_state()
 
     def clear_downloading(self, flavor_id: str, message: str = ""):
         self._downloading.pop(flavor_id, None)
-        self.note.setText(message)
-        restyle(self.note, "errorText" if message else "rowMeta")
+        if message:
+            self._errors[flavor_id] = message
+        else:
+            self._errors.pop(flavor_id, None)
         self._sync_state()
 
     def is_downloading(self, flavor_id: str) -> bool:
@@ -156,7 +172,9 @@ class CatalogRow(Row):
         if flavor in self._downloading:
             self.on_cancel(self.recipe, flavor)
         else:
-            self.note.setText("")
+            # An error note stays up until the edition is tried again.
+            self._errors.pop(flavor, None)
+            self._sync_state()
             self.on_install(self.recipe, flavor)
 
     def _install(self):
@@ -315,11 +333,10 @@ class CatalogView(QWidget):
         if row:
             row.set_downloading(flavor_id)
 
-    def on_download_progress(self, key: str, flavor_id: str, pct: int,
-                             mbps: float, eta: int):
+    def on_download_progress(self, key: str, flavor_id: str, task: DownloadTask):
         row = self.rows.get(key)
         if row:
-            row.set_downloading(flavor_id, pct, mbps, eta)
+            row.set_downloading(flavor_id, task)
 
     def on_download_ended(self, key: str, flavor_id: str, ok: bool, message: str):
         row = self.rows.get(key)

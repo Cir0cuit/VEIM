@@ -58,6 +58,12 @@ def test_no_silent_stale_fallbacks(recipe: DistroRecipe):
     # Fedora entries are a table each, over one base that does the fetching.
     source = "\n".join(inspect.getsource(cls) for cls in type(recipe).__mro__
                        if cls.__module__.startswith("src.recipes"))
+    # And the module's own helpers it calls: Clonezilla and GParted share one
+    # that reads a CHECKSUMS.TXT and raises for both.
+    module = inspect.getmodule(type(recipe))
+    source += "\n".join(
+        inspect.getsource(fn) for name, fn in inspect.getmembers(module, inspect.isfunction)
+        if fn.__module__ == module.__name__ and name in source)
     lowered = source.lower()
 
     assert "# fallback" not in lowered, (

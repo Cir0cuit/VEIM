@@ -75,6 +75,12 @@ PUPPY = {
     PUPPY_BASE + "puppy-trixie/TrixiePup64/11.4/wayland/": _listing(
         "../", "Trixiepup64_Wayland-11.4.iso"),
     PUPPY_BASE + "puppy-fossa/": _listing("../", "fossapup64-9.5.iso"),
+    # TrixiePup64's official builds; the 11.4 above is a test build.
+    "https://sourceforge.net/projects/pb-gh-releases/rss?path=/TrixiePup64Wayland_release":
+        "<rss><channel>" + "".join(
+            f"<item><title><![CDATA[/TrixiePup64Wayland_release/{n}]]></title></item>"
+            for n in ("devx_dpupt64w_2606.sfs", "TrixiePup64-Wayland-2606-261003.iso",
+                      "TrixiePup64-Wayland-2606-260901.iso")) + "</channel></rss>",
 }
 
 
@@ -86,7 +92,7 @@ def puppy(monkeypatch):
 @pytest.mark.parametrize("flavor,version,filename", [
     # 10.0.12, not 10.0.9 - which is what sorting the folders as text picks.
     ("bookworm", "10.0.12", "BookwormPup64_10.0.12.iso"),
-    ("trixie", "11.4", "Trixiepup64_Wayland-11.4.iso"),
+    ("trixie", "2606-261003", "TrixiePup64-Wayland-2606-261003.iso"),
     ("fossa", "9.5", "fossapup64-9.5.iso"),
 ])
 def test_puppy_finds_the_newest_release_folder(puppy, flavor, version, filename):

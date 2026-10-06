@@ -10,6 +10,7 @@ from collections import deque
 from typing import Callable, Optional
 from urllib.parse import urlparse
 from src.core.logger import log
+from src.core.ventoy_config import is_bootable
 
 # Speed is averaged over this window; a single chunk-to-chunk sample measures
 # TCP jitter, not throughput.
@@ -155,19 +156,19 @@ def describe_failure(exc: Exception, url: str = "") -> str:
 
 
 def extract_iso_from_zip(zip_path: str, dest_path: str) -> None:
-    """Unpack the single ISO inside `zip_path` to `dest_path`.
+    """Unpack the single bootable image inside `zip_path` to `dest_path`.
 
     Some projects publish only a zipped image - Memtest86+ ships
-    mt86plus_<ver>_x86_64.iso.zip and no plain .iso at all. Ventoy boots ISO
-    files, so writing the archive to the drive would leave the user with
-    something that silently never appears in the boot menu.
+    mt86plus_<ver>_x86_64.iso.zip and no plain .iso at all. Ventoy boots the
+    image, not the archive, so writing the archive to the drive would leave
+    the user with something that silently never appears in the boot menu.
     """
     with zipfile.ZipFile(zip_path) as archive:
         members = [m for m in archive.infolist()
-                   if not m.is_dir() and m.filename.lower().endswith(".iso")]
+                   if not m.is_dir() and is_bootable(m.filename)]
         if len(members) != 1:
             raise ArchiveError(
-                f"expected exactly one .iso inside the archive, found {len(members)}"
+                f"expected exactly one bootable image inside the archive, found {len(members)}"
             )
         member = members[0]
         with archive.open(member) as src, open(dest_path, "wb") as out:
@@ -445,7 +446,16 @@ class DownloadTask:
                     # opened for writing, and a symlink would be written through.
                     with contextlib.suppress(OSError):
                         os.remove(self.dest_path)
-                    extract_iso_from_zip(self.part_path, self.dest_path)
+                    # Unpacked under a name nothing boots or lists, then
+                    # renamed: a half-written image would otherwise sit in
+                    # Managed_ISOs, offered for adoption or deletion.
+                    unpacking = self.dest_path + ".unpacking"
+                    try:
+                        extract_iso_from_zip(self.part_path, unpacking)
+                        os.replace(unpacking, self.dest_path)
+                    finally:
+                        with contextlib.suppress(OSError):
+                            os.remove(unpacking)
                     os.remove(self.part_path)
                 else:
                     os.replace(self.part_path, self.dest_path)

@@ -6,14 +6,24 @@ exactly the images people keep on a Ventoy stick for provisioning work.
 import re
 from typing import List
 
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, version_key
+from src.core.recipe_base import (
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, published_sha256, version_key)
 from src.core.logger import log
+
+
+def _hrefs(session, url: str, timeout: int = 20) -> List[str]:
+    """Every href on a page. Raises when the page cannot be read."""
+    r = session.get(url, timeout=timeout)
+    r.raise_for_status()
+    return hrefs(r.text)
 
 
 class RockyLinuxRecipe(DistroRecipe):
     key = "rocky"
     name = "Rocky Linux"
     description = "Community enterprise OS, binary compatible with Red Hat Enterprise Linux."
+
+    ROOT = "https://download.rockylinux.org/pub/rocky/"
 
     FLAVORS = [
         FlavorInfo("dvd", "DVD"),
@@ -26,37 +36,38 @@ class RockyLinuxRecipe(DistroRecipe):
             raise ScrapeError(self.name, f"unknown Rocky image {flavor_id!r}")
 
         session = self.get_session()
-        root = "https://download.rockylinux.org/pub/rocky/"
         try:
-            index = session.get(root, timeout=20)
+            index = session.get(self.ROOT, timeout=20)
             index.raise_for_status()
             # The tree carries bare majors ("10") next to point releases
             # ("10.2"); the bare major tracks the newest point release, so
             # prefer it. A string sort would also rank "9.8" above "10".
-            majors = sorted({m for m in re.findall(r'href="(\d+)/"', index.text)},
-                            key=version_key)
-            for major in reversed(majors):
-                listing = session.get(f"{root}{major}/isos/x86_64/", timeout=20)
-                if listing.status_code != 200:
-                    continue
-                # The point release by name ("Rocky-10.2-..."), never the
-                # "Rocky-10-latest-..." alias beside it: that name and the bare
-                # "10" stay the same through 10.3 and 10.4, so an image
-                # downloaded at 10.2 would read as up to date for good. The
-                # DVD alone is numbered ("dvd1").
-                found = re.findall(
-                    rf'(Rocky-({major}\.\d+)-x86_64-{flavor_id}\d?\.iso)', listing.text)
-                if found:
-                    fname, ver = max(found, key=lambda pair: version_key(pair[1]))
-                    return DownloadInfo(
-                        version=ver,
-                        url=f"{root}{major}/isos/x86_64/{fname}",
-                        filename=fname,
-                    )
+            majors = {int(m) for m in re.findall(r'href="(\d+)/"', index.text)}
+            if not majors:
+                raise ScrapeError(self.name, "download.rockylinux.org listed no release series")
+            # Only the newest major: when its images cannot be listed, an
+            # older major's point release is not the current one.
+            major = max(majors)
+            iso_dir = f"{self.ROOT}{major}/isos/x86_64/"
+            listing = session.get(iso_dir, timeout=20)
+            listing.raise_for_status()
+            # The point release by name ("Rocky-10.2-..."), never the
+            # "Rocky-10-latest-..." alias beside it: that name and the bare
+            # "10" stay the same through 10.3 and 10.4, so an image
+            # downloaded at 10.2 would read as up to date for good. The
+            # DVD alone is numbered ("dvd1").
+            found = re.findall(
+                rf'(Rocky-({major}\.\d+)-x86_64-{flavor_id}\d?\.iso)', listing.text)
+            if not found:
+                raise ScrapeError(self.name, f"no Rocky Linux {major} {flavor_id} image listed")
+            fname, ver = max(found, key=lambda pair: version_key(pair[1]))
+            sha256 = published_sha256(session, f"{iso_dir}{fname}.CHECKSUM", fname, self.name)
+        except ScrapeError:
+            raise
         except Exception as e:
             log.warning(f"[Rocky Linux] Scrape error: {e}")
-
-        raise ScrapeError(self.name, f"no current {flavor_id} image listed on download.rockylinux.org")
+            raise ScrapeError(self.name, f"could not read download.rockylinux.org ({e})")
+        return DownloadInfo(version=ver, url=iso_dir + fname, filename=fname, sha256=sha256)
 
 
 class ProxmoxRecipe(DistroRecipe):
@@ -94,7 +105,8 @@ class ProxmoxRecipe(DistroRecipe):
             found = re.findall(rf'({re.escape(product)}_(\d+\.\d+-\d+)\.iso)', listing.text)
             if found:
                 fname, ver = max(found, key=lambda pair: version_key(pair[1]))
-                return DownloadInfo(version=ver, url=base + fname, filename=fname)
+                return DownloadInfo(version=ver, url=base + fname, filename=fname,
+                                    sha256=published_sha256(session, base + "SHA256SUMS", fname, self.name))
         except Exception as e:
             log.warning(f"[Proxmox] Scrape error: {e}")
 
@@ -121,18 +133,12 @@ class QubesRecipe(DistroRecipe):
             finals = re.findall(r'(Qubes-R(\d+(?:\.\d+)*)-x86_64\.iso)', listing.text)
             if finals:
                 fname, ver = max(finals, key=lambda pair: version_key(pair[1]))
-                return DownloadInfo(version=ver, url=base + fname, filename=fname)
+                return DownloadInfo(version=ver, url=base + fname, filename=fname,
+                                    sha256=published_sha256(session, f"{base}{fname}.DIGESTS", fname, self.name))
         except Exception as e:
             log.warning(f"[Qubes OS] Scrape error: {e}")
 
         raise ScrapeError(self.name, "no current stable release listed on ftp.qubes-os.org")
-
-
-def _hrefs(session, url: str, timeout: int = 20) -> List[str]:
-    """Every href on a page. Raises when the page cannot be read."""
-    r = session.get(url, timeout=timeout)
-    r.raise_for_status()
-    return re.findall(r'href="([^"]+)"', r.text)
 
 
 class FreeBSDRecipe(DistroRecipe):
@@ -145,7 +151,7 @@ class FreeBSDRecipe(DistroRecipe):
     FLAVORS = [
         FlavorInfo("disc1", "Installer (disc1)"),
         FlavorInfo("dvd1", "Installer with packages (dvd1)"),
-        FlavorInfo("bootonly", "Network installer (bootonly)"),
+        FlavorInfo("bootonly", "Net Install (bootonly)"),
     ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -161,11 +167,9 @@ class FreeBSDRecipe(DistroRecipe):
                 fname = f"FreeBSD-{release}-RELEASE-amd64-{flavor_id}.iso"
                 if fname not in _hrefs(session, f"{self.ROOT}{release}/"):
                     continue
-                sha256 = ""
-                sums = session.get(f"{self.ROOT}{release}/CHECKSUM.SHA256-FreeBSD-{release}-RELEASE-amd64", timeout=20)
-                if sums.status_code == 200:
-                    m = re.search(rf'SHA256 \({re.escape(fname)}\) = ([0-9a-f]{{64}})', sums.text)
-                    sha256 = m.group(1) if m else ""
+                sha256 = published_sha256(
+                    session, f"{self.ROOT}{release}/CHECKSUM.SHA256-FreeBSD-{release}-RELEASE-amd64",
+                    fname, self.name)
                 return DownloadInfo(version=release, url=f"{self.ROOT}{release}/{fname}",
                                     filename=fname, sha256=sha256)
         except Exception as e:
@@ -205,8 +209,8 @@ class OracleLinuxRecipe(DistroRecipe):
     description = "Oracle's free, RHEL-compatible enterprise distribution."
 
     FLAVORS = [
-        FlavorInfo("dvd", "Full ISO (DVD)"),
-        FlavorInfo("boot", "Boot ISO"),
+        FlavorInfo("dvd", "Full DVD"),
+        FlavorInfo("boot", "Boot"),
     ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -235,15 +239,36 @@ class TalosRecipe(DistroRecipe):
 
     FLAVORS = [FlavorInfo("metal", "Bare metal (amd64)")]
 
+    # Not /releases/latest: Talos patches two or three branches at once, and
+    # GitHub flags the most recently published release as latest unless told
+    # otherwise - one backport published without that would make 1.13.11 the
+    # current release over 1.14.2. Twenty releases reach well past the newest
+    # final, since every branch is patched every few weeks.
+    # ponytail: newest of the last 20; page further if a gap that long appears.
+    RELEASES = "https://api.github.com/repos/siderolabs/talos/releases?per_page=20"
+
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        tag, assets = self.github_latest("siderolabs/talos")
-        for asset in assets:
-            if asset.get("name") == "metal-amd64.iso" and re.fullmatch(r'v\d+(\.\d+)+', tag):
+        try:
+            r = self.get_session().get(self.RELEASES, timeout=20)
+            r.raise_for_status()
+            releases = r.json()
+        except Exception as e:
+            log.warning(f"[Talos Linux] GitHub API error: {e}")
+            raise ScrapeError(self.name, f"could not read the Talos release feed ({e})")
+        finals = [rel for rel in releases if not rel.get("draft") and not rel.get("prerelease")
+                  and re.fullmatch(r'v\d+(\.\d+)+', str(rel.get("tag_name", "")))]
+        if not finals:
+            raise ScrapeError(self.name, "the Talos release feed listed no final release")
+        newest = max(finals, key=lambda rel: version_key(rel["tag_name"]))
+        tag = newest["tag_name"]
+        for asset in newest.get("assets", []):
+            if asset.get("name") == "metal-amd64.iso":
                 # Upstream calls every release's image "metal-amd64.iso". Saved
                 # under that name, nothing on the drive would say which it is.
                 return DownloadInfo(version=tag, url=asset.get("browser_download_url"),
                                     filename=f"talos-{tag.lstrip('v')}-metal-amd64.iso")
-        raise ScrapeError(self.name, "the latest Talos release carries no metal-amd64.iso")
+        # Not the release before it: its assets may still be uploading.
+        raise ScrapeError(self.name, f"Talos {tag} carries no metal-amd64.iso")
 
 
 class CentOSStreamRecipe(DistroRecipe):
@@ -282,14 +307,8 @@ class CentOSStreamRecipe(DistroRecipe):
             raise ScrapeError(self.name, f"no dated {kind} image listed for CentOS Stream {stream}")
 
         fname, compose = max(found, key=lambda f: version_key(f[1]))
-        sha256 = ""
-        try:
-            sums = session.get(f"{iso_dir}{fname}.SHA256SUM", timeout=20)
-            m = re.search(r'=\s*([0-9a-f]{64})', sums.text) if sums.status_code == 200 else None
-            sha256 = m.group(1) if m else ""
-        except Exception as e:
-            log.warning(f"[CentOS Stream] No checksum for {fname}: {e}")
-        return DownloadInfo(version=f"{stream} ({compose})", url=iso_dir + fname, filename=fname, sha256=sha256)
+        return DownloadInfo(version=f"{stream} ({compose})", url=iso_dir + fname, filename=fname,
+                            sha256=published_sha256(session, f"{iso_dir}{fname}.SHA256SUM", fname, self.name))
 
 
 class XCPngRecipe(DistroRecipe):
@@ -301,7 +320,7 @@ class XCPngRecipe(DistroRecipe):
 
     FLAVORS = [
         FlavorInfo("standard", "Installer"),
-        FlavorInfo("netinstall", "Network installer"),
+        FlavorInfo("netinstall", "Net Install"),
     ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -313,16 +332,30 @@ class XCPngRecipe(DistroRecipe):
             series = sorted({h.strip("/") for h in _hrefs(session, self.ROOT) if re.fullmatch(r'\d+\.\d+/', h)},
                             key=version_key, reverse=True)
             for release in series:
-                # Refreshed installers of one release are told apart by date,
-                # with a ".2" for a second build on the same day.
+                folder = f"{self.ROOT}{release}/"
+                isos = [h for h in _hrefs(session, folder) if h.startswith("xcp-ng-") and h.endswith(".iso")]
+                # A series' first installer carries no build ("xcp-ng-8.2.1.iso")
+                # or a respin number ("8.1.0-2"); refreshed ones are told apart
+                # by date, with a ".2" for a second build on the same day. No
+                # build ranks below any, so a refresh beats the GA image.
                 found = []
-                for h in _hrefs(session, f"{self.ROOT}{release}/"):
-                    m = re.fullmatch(rf'xcp-ng-(\d+\.\d+\.\d+)-(\d{{8}}(?:\.\d+)?){suffix}\.iso', h)
+                for h in isos:
+                    m = re.fullmatch(rf'xcp-ng-(\d+\.\d+\.\d+)(?:-(\d+(?:\.\d+)?))?{suffix}\.iso', h)
                     if m:
-                        found.append((h, m.group(1), m.group(2)))
+                        found.append((h, m.group(1), m.group(2) or ""))
                 if found:
                     fname, ver, build = max(found, key=lambda f: (version_key(f[1]), version_key(f[2])))
-                    return DownloadInfo(version=f"{ver} ({build})", url=f"{self.ROOT}{release}/{fname}", filename=fname)
+                    sha256 = published_sha256(session, folder + "SHA256SUMS", fname, self.name)
+                    return DownloadInfo(version=f"{ver} ({build})" if build else ver, url=folder + fname,
+                                        filename=fname, sha256=sha256)
+                # A series opens with its betas and RCs - 8.3 sat in beta for
+                # over a year while 8.2 was the release - so only then is the
+                # series below it current. Anything else here is a release
+                # under a name this does not know, and the one below is not it.
+                if any(not re.search(r'-(?:alpha|beta|rc)\d', h) for h in isos):
+                    raise ScrapeError(self.name, f"XCP-ng {release} lists no {flavor_id} installer by a known name")
+        except ScrapeError:
+            raise
         except Exception as e:
             log.warning(f"[XCP-ng] Scrape error: {e}")
             raise ScrapeError(self.name, f"could not read mirrors.xcp-ng.org ({e})")
@@ -340,9 +373,9 @@ class OpenEulerRecipe(DistroRecipe):
 
     FLAVORS = [
         FlavorInfo("lts", "LTS (DVD)"),
-        FlavorInfo("lts-netinst", "LTS (Network Install)"),
-        FlavorInfo("innovation", "Innovation release (DVD)"),
-        FlavorInfo("innovation-netinst", "Innovation release (Network Install)"),
+        FlavorInfo("lts-netinst", "LTS (Net Install)"),
+        FlavorInfo("innovation", "Innovation (DVD)"),
+        FlavorInfo("innovation-netinst", "Innovation (Net Install)"),
     ]
 
     @staticmethod
@@ -371,15 +404,20 @@ class OpenEulerRecipe(DistroRecipe):
                     # Not an answer; trying an older release here would serve
                     # it as the current one.
                     raise ScrapeError(self.name, f"{iso_dir} answered HTTP {listing.status_code}")
-                if listing.status_code == 404 or f'"{fname}"' not in listing.text:
-                    continue                  # announced, images not published yet
-                sha256 = ""
-                sums = session.get(f"{iso_dir}{fname}.sha256sum", timeout=20)
-                if sums.status_code == 200:
-                    m = re.match(r'([0-9a-f]{64})', sums.text.strip())
-                    sha256 = m.group(1) if m else ""
-                return DownloadInfo(version=release[len("openEuler-"):], url=iso_dir + fname,
-                                    filename=fname, sha256=sha256)
+                # openEuler opens a release's folder when it is announced and
+                # fills ISO/ later, so a missing or empty ISO folder means the
+                # release before it is still the current one. ISOs under other
+                # names do not: the layout changed, and the older release is
+                # not current just because its name is the expected one.
+                isos = [h for h in hrefs(listing.text) if h.endswith(".iso")] if listing.status_code == 200 else []
+                if fname not in isos:
+                    if isos:
+                        raise ScrapeError(self.name, f"{release} lists no {fname}")
+                    continue
+                return DownloadInfo(version=release[len("openEuler-"):], url=iso_dir + fname, filename=fname,
+                                    sha256=published_sha256(session, f"{iso_dir}{fname}.sha256sum", fname, self.name))
+        except ScrapeError:
+            raise
         except Exception as e:
             log.warning(f"[openEuler] Scrape error: {e}")
             raise ScrapeError(self.name, f"could not read repo.openeuler.org ({e})")

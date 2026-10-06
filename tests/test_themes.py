@@ -19,7 +19,8 @@ COLOR_FIELDS = [
     "text_primary", "text_secondary", "text_muted", "accent", "accent_hover",
     "accent_text", "success", "warning", "danger", "info",
     "bg_sidebar", "bg_elevated", "row_hover", "accent_soft", "accent_fg", "icon_chip",
-    "icon_plate",
+    "success_soft", "success_fg",
+    "icon_plate", "unmanaged",
 ]
 
 
@@ -154,3 +155,11 @@ def test_derived_surfaces_default_without_being_restated():
     assert minimal.bg_sidebar == "#111111"
     assert minimal.icon_chip == "#222222"     # derived from bg_elevated
     assert minimal.icon_plate != minimal.icon_chip
+
+
+@pytest.mark.parametrize("name", list(THEMES))
+def test_the_installed_badge_is_readable(name):
+    """success_fg labels the catalog's Installed badge, on success_soft."""
+    theme = THEMES[name]
+    ratio = contrast(theme.success_fg, theme.success_soft)
+    assert ratio >= 4.5, f"{name}: success_fg on success_soft is only {ratio:.1f}:1"

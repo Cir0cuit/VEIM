@@ -6,6 +6,7 @@ doubled download percentage, catalog filtering - so they cannot come back
 unnoticed.
 """
 import os
+import time
 
 import pytest
 
@@ -13,7 +14,17 @@ pytest.importorskip("PySide6")
 
 from src.core.downloader import DownloadTask
 from src.core.inventory import InventoryItem
+from src.ui.unmanaged_row import UnmanagedRow
 from src.recipes.registry import registry
+
+
+@pytest.fixture(autouse=True)
+def tidy_reports(monkeypatch):
+    """The report of a Managed_ISOs tidy-up is a modal box; record it instead."""
+    from src.ui.dashboard import DashboardView
+    reports = []
+    monkeypatch.setattr(DashboardView, "_report_tidy", lambda self, done: reports.append(done))
+    return reports
 
 
 @pytest.fixture
@@ -244,8 +255,8 @@ def test_catalog_marks_installed_flavor(themed):
     view = CatalogView(on_install=lambda r, f: None,
                        installed_lookup=lambda k: {"standard"} if k == "arch" else set())
     row = view.rows["arch"]
-    assert row.btn.text() == "Reinstall"
-    assert view.rows["debian"].btn.text() == "Download"
+    assert not row.badge.isHidden() and row.btn.isHidden(), "no Reinstall: it is in the library"
+    assert view.rows["debian"].btn.text() == "Download" and not view.rows["debian"].btn.isHidden()
 
 
 def test_catalog_install_passes_selected_flavor(themed):
@@ -438,9 +449,6 @@ def workspace(themed, qapp, tmp_path, monkeypatch):
 
     monkeypatch.setattr(DashboardView, "_worker_fetch_and_start_download",
                         lambda *a, **kw: None)
-    # The post-adoption offer to move root ISOs in is a modal box; a test
-    # that wants it answered yes patches this itself.
-    monkeypatch.setattr(DashboardView, "_ask_move_hidden", lambda self, hidden: False)
 
     ws = Workspace(drive_path=str(tmp_path), on_change_drive=lambda: None)
     ws.resize(1180, 760)
@@ -529,11 +537,28 @@ def test_progress_belongs_to_the_selected_flavor_only(workspace, qapp):
     assert row.current_flavor() != downloading
     assert row.btn.text() == "Download", "a different edition looked like it was downloading"
     assert row.progress.isHidden()
+    assert row.note.isHidden(), "the other edition's progress line stayed up"
 
     row.combo.setCurrentIndex(0)
     qapp.processEvents()
     assert row.btn.text() == "Cancel", "the downloading edition lost its state"
     assert not row.progress.isHidden()
+    assert row.note.text() == "Starting…" and not row.note.isHidden()
+
+
+def test_a_failure_stays_with_the_edition_that_failed(themed, qapp):
+    from src.ui.catalog_view import CatalogView
+    row = CatalogView(on_install=lambda r, f: None).rows["debian"]
+    failed = row.current_flavor()
+    row.set_downloading(failed)
+    row.clear_downloading(failed, "mirror timed out")
+    assert row.note.text() == "mirror timed out"
+
+    row.combo.setCurrentIndex(1)
+    assert row.note.isHidden(), "another edition showed this one's error"
+
+    row.combo.setCurrentIndex(0)
+    assert row.note.text() == "mirror timed out" and not row.note.isHidden()
 
 
 def test_failed_download_leaves_its_reason_on_the_row(workspace, qapp):
@@ -585,7 +610,7 @@ def test_completed_download_marks_the_row_installed(workspace, qapp, tmp_path):
 
     assert not row.is_downloading(flavor)
     assert row.progress.isHidden()
-    assert row.btn.text() == "Reinstall"
+    assert row.btn.isHidden(), "an installed edition offers nothing to download"
     assert not row.badge.isHidden(), "the Installed badge did not appear"
 
 
@@ -764,7 +789,7 @@ def _adopt_everything(ws):
     """Say yes to every candidate, the way the adoption dialog would."""
     from src.ui.adopt_dialog import ADOPT
     candidates = ws.library._adoptable()
-    ws.library._apply_adoption(candidates, {c.filename: ADOPT for c in candidates})
+    ws.library._apply_adoption(candidates, {c.ventoy_path: ADOPT for c in candidates})
 
 
 def test_remove_deletes_the_iso_of_the_row_that_was_clicked(workspace, qapp, tmp_path, monkeypatch):
@@ -917,7 +942,7 @@ def test_adoption_dialog_offers_only_what_the_catalog_can_update(drive_with_loos
 
     lib = drive_with_loose_isos.library
     candidates = lib._adoptable(include_excluded=True)
-    dialog = AdoptDialog(candidates, {c.filename: lib._display_name(c) for c in candidates})
+    dialog = AdoptDialog(candidates, {c.ventoy_path: lib._display_name(c) for c in candidates})
 
     offered = sorted(row.candidate.filename for row in dialog.rows)
     assert offered == ["archlinux-2026.05.01-x86_64.iso",
@@ -940,9 +965,9 @@ def test_adopting_and_excluding_from_the_dialog(drive_with_loose_isos, qapp, tmp
     lib = drive_with_loose_isos.library
     clonezilla = "clonezilla-live-20260705-resolute-amd64.iso"
     lib._apply_adoption(lib._adoptable(), {
-        "archlinux-2026.05.01-x86_64.iso": ADOPT,
-        "debian-13.4.0-amd64-netinst.iso": ADOPT,
-        clonezilla: EXCLUDE,
+        "/Managed_ISOs/archlinux-2026.05.01-x86_64.iso": ADOPT,
+        "/debian-13.4.0-amd64-netinst.iso": ADOPT,
+        f"/Managed_ISOs/{clonezilla}": EXCLUDE,
     })
     qapp.processEvents()
 
@@ -951,15 +976,19 @@ def test_adopting_and_excluding_from_the_dialog(drive_with_loose_isos, qapp, tmp
     assert (tmp_path / "Managed_ISOs" / "debian-13.4.0-amd64-netinst.iso").exists()
     assert (tmp_path / "Managed_ISOs" / clonezilla).exists(), "an excluded ISO was removed"
 
-    # Nothing is waiting, but the dialog stays reachable to undo the exclusion.
-    assert lib.btn_adopt.text() == "Excluded ISOs"
-    assert not lib.btn_adopt.isHidden()
+    # Nothing is waiting. The exclusion is undone from the excluded ISO's own
+    # row, which says it is left alone and still offers Adopt.
+    assert lib.btn_adopt.isHidden()
     assert [c.filename for c in lib._adoptable(include_excluded=True)] == [clonezilla]
 
-    # The three that are left alone are mentioned once, not given rows.
     assert not lib.lbl_unmanaged.isHidden()
-    assert lib.lbl_unmanaged.text().startswith("3 other ISOs")
-    assert "galaxybook" in lib.lbl_unmanaged.toolTip()
+    assert sorted(r.image.filename for r in lib.unmanaged_rows.values()) == [
+        "Win11_25H2_English_x64.iso", clonezilla, "clonezilla-live-galaxybook-20260808.iso"]
+    row = lib.unmanaged_rows[f"/Managed_ISOs/{clonezilla}"]
+    assert "Left alone" in row.meta.fullText()
+    assert not row.btn_adopt.isHidden()
+    assert lib.unmanaged_rows[
+        "/Managed_ISOs/clonezilla-live-galaxybook-20260808.iso"].btn_adopt.isHidden()
 
 
 def test_adopted_isos_are_not_offered_for_adoption_again(drive_with_loose_isos, qapp, monkeypatch):
@@ -991,11 +1020,15 @@ def test_remove_can_keep_the_file_and_stop_managing_it(drive_with_loose_isos, qa
     qapp.processEvents()
 
     assert sorted(lib.cards) == ["clonezilla::alternative", "debian::netinst"]
-    assert (tmp_path / "Managed_ISOs" / "archlinux-2026.05.01-x86_64.iso").exists()
-    # Left alone for good, and the way back is labelled for what it holds.
+    # Out of Managed_ISOs, which holds only what VEIM manages, and still booting.
+    assert not (tmp_path / "Managed_ISOs" / "archlinux-2026.05.01-x86_64.iso").exists()
+    assert (tmp_path / "archlinux-2026.05.01-x86_64.iso").exists()
+    # Left alone for good; the way back is Adopt on its row.
     assert lib._adoptable() == []
-    assert lib.btn_adopt.text() == "Excluded ISOs"
-    assert not lib.btn_adopt.isHidden()
+    assert lib.btn_adopt.isHidden()
+    row = lib.unmanaged_rows["/archlinux-2026.05.01-x86_64.iso"]
+    assert "Left alone" in row.meta.fullText()
+    assert not row.btn_adopt.isHidden()
 
 
 def test_adopt_all_respects_an_exclusion(drive_with_loose_isos):
@@ -1009,31 +1042,26 @@ def test_adopt_all_respects_an_exclusion(drive_with_loose_isos):
     dialog.btn_all.click()
 
     choices = dialog.choices()
-    assert choices["clonezilla-live-20260705-resolute-amd64.iso"] == "exclude"
-    assert choices["archlinux-2026.05.01-x86_64.iso"] == "adopt"
+    assert choices["/Managed_ISOs/clonezilla-live-20260705-resolute-amd64.iso"] == "exclude"
+    assert choices["/Managed_ISOs/archlinux-2026.05.01-x86_64.iso"] == "adopt"
 
 
-def test_root_isos_the_boot_menu_cannot_see_can_be_moved_in(drive_with_loose_isos, qapp, tmp_path):
-    """Regression: "Adopt Root ISOs" used to move every root ISO into
-    Managed_ISOs, the one folder VEIM lets Ventoy search. Once only adopted
-    ISOs moved, an ISO the catalog does not know stayed in the root, missing
-    from the boot menu, with nothing in the app to say so or fix it."""
+def test_images_anywhere_on_the_stick_are_listed_where_they_are(
+        drive_with_loose_isos, qapp, tmp_path):
+    """Ventoy searches the whole stick, so an image in the root or any folder
+    boots where it is. It is listed there and moved nowhere."""
     lib = drive_with_loose_isos.library
     (tmp_path / "HBCD_PE_x64.iso").write_bytes(b"iso")
-    _adopt_everything(drive_with_loose_isos)      # saves, which writes ventoy.json
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "shellx64.efi").write_bytes(b"efi")
+    _adopt_everything(drive_with_loose_isos)
     qapp.processEvents()
 
-    assert not lib.hidden_notice.isHidden()
-    assert lib.lbl_hidden.text().startswith("1 ISO in the drive root is missing")
-    assert "HBCD_PE_x64.iso" in lib.hidden_notice.toolTip()
-
-    lib.btn_move_in.click()
-    qapp.processEvents()
-
-    assert (tmp_path / "Managed_ISOs" / "HBCD_PE_x64.iso").exists()
-    assert lib.hidden_notice.isHidden()
-    assert len(lib.cards) == 3, "moving an ISO in made a row of it"
-    assert "HBCD_PE_x64.iso" in lib.lbl_unmanaged.toolTip()
+    assert (tmp_path / "HBCD_PE_x64.iso").exists()
+    assert (tmp_path / "tools" / "shellx64.efi").exists()
+    assert "/HBCD_PE_x64.iso" in lib.unmanaged_rows
+    assert "/tools/shellx64.efi" in lib.unmanaged_rows
+    assert len(lib.cards) == 3
 
 
 # ------------------------------------------------------ check all updates
@@ -1491,52 +1519,6 @@ def test_the_poll_itself_updates_the_sidebar(installed, qapp, monkeypatch):
     assert ws.sidebar.lbl_space.text() == "10.0 GB free of 100 GB"
 
 
-# ------------------------------------- root ISOs offered a move after adoption
-
-def test_adoption_offers_to_move_the_root_isos_it_left_behind(drive_with_loose_isos, qapp, tmp_path,
-                                                              monkeypatch):
-    from src.ui.dashboard import DashboardView
-    lib = drive_with_loose_isos.library
-    (tmp_path / "HBCD_PE_x64.iso").write_bytes(b"iso")
-    (tmp_path / "hdat2cd_76.iso").write_bytes(b"iso")
-
-    asked = []
-    monkeypatch.setattr(DashboardView, "_ask_move_hidden",
-                        lambda self, hidden: asked.append(sorted(hidden)) or True)
-    _adopt_everything(drive_with_loose_isos)
-    qapp.processEvents()
-
-    assert asked == [["HBCD_PE_x64.iso", "hdat2cd_76.iso"]]
-    assert (tmp_path / "Managed_ISOs" / "HBCD_PE_x64.iso").exists()
-    assert (tmp_path / "Managed_ISOs" / "hdat2cd_76.iso").exists()
-    assert lib.hidden_notice.isHidden()
-    assert "HBCD_PE_x64.iso" in lib.lbl_unmanaged.toolTip(), "moved in, still not managed"
-
-
-def test_declining_the_move_leaves_the_root_isos_and_the_notice(drive_with_loose_isos, qapp, tmp_path,
-                                                                monkeypatch):
-    from src.ui.dashboard import DashboardView
-    lib = drive_with_loose_isos.library
-    (tmp_path / "HBCD_PE_x64.iso").write_bytes(b"iso")
-    monkeypatch.setattr(DashboardView, "_ask_move_hidden", lambda self, hidden: False)
-
-    _adopt_everything(drive_with_loose_isos)
-    qapp.processEvents()
-
-    assert (tmp_path / "HBCD_PE_x64.iso").exists()
-    assert not lib.hidden_notice.isHidden(), "the library still offers the move"
-
-
-def test_adoption_does_not_ask_when_nothing_is_hidden(drive_with_loose_isos, qapp, monkeypatch):
-    from src.ui.dashboard import DashboardView
-    asked = []
-    monkeypatch.setattr(DashboardView, "_ask_move_hidden",
-                        lambda self, hidden: asked.append(hidden) or False)
-    _adopt_everything(drive_with_loose_isos)
-    qapp.processEvents()
-    assert asked == []
-
-
 # ------------------------------------------------------- retries on the row
 
 def test_rows_show_the_retry_countdown_instead_of_a_dead_speed(themed):
@@ -1566,3 +1548,408 @@ def test_rows_show_the_retry_countdown_instead_of_a_dead_speed(themed):
     row.begin_download()
     row.update_progress(task)
     assert row.meta.text().startswith("Updating to 2026.10.06  ·  22%  ·  ")
+
+
+# ---------------------------------------------------- not managed by VEIM
+
+def _ventoy_aliases(tmp_path) -> list:
+    import json
+    with open(tmp_path / "ventoy" / "ventoy.json", encoding="utf-8") as f:
+        return json.load(f)["menu_alias"]
+
+
+@pytest.fixture
+def loose_image(workspace, qapp, tmp_path):
+    """One image in Managed_ISOs that the catalog does not know."""
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    (managed / "mine.iso").write_bytes(b"iso")
+    workspace.library.refresh_installed_list()
+    qapp.processEvents()
+    return workspace.library
+
+
+def test_drive_map_gives_unmanaged_images_a_block_of_their_own(themed):
+    from src.ui.components import DriveMap
+    gib = 1024 ** 3
+    drive_map = DriveMap()
+    drive_map.set_isos([("arch::", "arch", "Arch Linux", 2 * gib)])
+    drive_map.set_unmanaged(5 * gib)
+    drive_map.set_drive(total_gb=64, free_gb=40)
+    assert [(name, round(gb, 1)) for name, gb, _ in drive_map.parts()] == [
+        ("Arch Linux", 2.0), ("Not managed by VEIM", 5.0), ("Other files", 17.0)]
+    drive_map.resize(700, drive_map.sizeHint().height())
+    assert not drive_map.grab().isNull()
+
+
+def test_unmanaged_section_is_hidden_when_there_is_nothing_to_list(installed):
+    lib = installed.library
+    assert lib.unmanaged_rows == {}
+    assert lib.lbl_unmanaged.isHidden()
+
+
+def test_an_efi_in_a_subfolder_gets_a_row_and_the_drive_is_not_empty(workspace, qapp, tmp_path):
+    lib = workspace.library
+    tools = tmp_path / "Managed_ISOs" / "tools"
+    tools.mkdir(parents=True)
+    (tools / "shell.efi").write_bytes(b"efi")
+    lib.refresh_installed_list()
+    qapp.processEvents()
+
+    row = lib.unmanaged_rows["/Managed_ISOs/tools/shell.efi"]
+    assert row.title.fullText() == "shell.efi"
+    assert "tools/shell.efi" in row.meta.fullText()
+    assert "EFI application" in row.meta.fullText()
+    assert row.btn_adopt.isHidden(), "nothing to keep up to date"
+    assert not lib.lbl_unmanaged.isHidden()
+    # Only unmanaged files on the drive: the list, not "No distributions yet".
+    assert lib.empty_container.isHidden()
+    assert not lib.scroll.isHidden()
+
+
+def test_delete_asks_with_cancel_as_the_default(loose_image, qapp, tmp_path, monkeypatch):
+    from src.ui import dashboard as dash
+    shown = []
+    monkeypatch.setattr(dash.QMessageBox, "exec", lambda box: shown.append(box))
+
+    loose_image.unmanaged_rows["/Managed_ISOs/mine.iso"].btn_delete.click()
+    qapp.processEvents()
+
+    [box] = shown
+    assert "mine.iso" in box.text() and "cannot be undone" in box.informativeText()
+    assert box.defaultButton() is box.button(dash.QMessageBox.StandardButton.Cancel)
+    assert (tmp_path / "Managed_ISOs" / "mine.iso").exists(), "deleted without a yes"
+
+
+def test_delete_once_confirmed_removes_the_file_and_the_row(loose_image, qapp, tmp_path, monkeypatch):
+    from src.ui.dashboard import DashboardView
+    monkeypatch.setattr(DashboardView, "_ask_delete", lambda self, image: True)
+
+    loose_image.unmanaged_rows["/Managed_ISOs/mine.iso"].btn_delete.click()
+    qapp.processEvents()
+
+    assert not (tmp_path / "Managed_ISOs" / "mine.iso").exists()
+    assert loose_image.unmanaged_rows == {}
+    assert loose_image.lbl_unmanaged.isHidden()
+
+
+def test_menu_name_of_an_unmanaged_image_goes_into_ventoy_json(loose_image, qapp, tmp_path,
+                                                               monkeypatch):
+    from src.ui import dashboard as dash
+    asked = []
+    monkeypatch.setattr(dash.QInputDialog, "getText",
+                        lambda *a: asked.append(a[4]) or ("My Tools", True))
+
+    loose_image.unmanaged_rows["/Managed_ISOs/mine.iso"].btn_rename.click()
+    qapp.processEvents()
+
+    assert asked == ["mine.iso"], "prefilled with what the menu shows now"
+    assert {"image": "/Managed_ISOs/mine.iso", "alias": "My Tools"} in _ventoy_aliases(tmp_path)
+    assert loose_image.unmanaged_rows["/Managed_ISOs/mine.iso"].title.fullText() == "My Tools"
+
+
+def test_only_an_image_veim_does_not_recognise_can_be_named(installed, qapp, tmp_path):
+    """What VEIM manages, or could, is named for what it is - distro, edition
+    and version - and only an unrecognised image takes a name of the user's."""
+    lib = installed.library
+    (tmp_path / "Managed_ISOs" / "debian-13.4.0-amd64-netinst.iso").write_bytes(b"iso")
+    (tmp_path / "mine.efi").write_bytes(b"efi")
+    lib.refresh_installed_list()
+
+    assert not hasattr(lib.cards["arch::standard"], "btn_rename")
+    assert {"image": "/Managed_ISOs/archlinux-2026.09.01-x86_64.iso",
+            "alias": "Arch Linux 2026.09.01"} in _ventoy_aliases(tmp_path)
+    assert lib.unmanaged_rows["/Managed_ISOs/debian-13.4.0-amd64-netinst.iso"].btn_rename.isHidden()
+    assert not lib.unmanaged_rows["/mine.efi"].btn_rename.isHidden()
+
+
+def test_adopting_a_recognised_image_turns_it_into_an_installed_row(workspace, qapp, tmp_path):
+    lib = workspace.library
+    sub = tmp_path / "Managed_ISOs" / "linux"
+    sub.mkdir(parents=True)
+    (sub / "archlinux-2026.05.01-x86_64.iso").write_bytes(b"iso")
+    lib.refresh_installed_list()
+    qapp.processEvents()
+
+    row = lib.unmanaged_rows["/Managed_ISOs/linux/archlinux-2026.05.01-x86_64.iso"]
+    assert not row.btn_adopt.isHidden()
+    row.btn_adopt.click()
+    qapp.processEvents()
+
+    assert (tmp_path / "Managed_ISOs" / "archlinux-2026.05.01-x86_64.iso").exists()
+    assert list(lib.cards) == ["arch::standard"]
+    assert lib.cards["arch::standard"].item.version == "2026.05.01"
+    assert lib.unmanaged_rows == {}
+
+
+def test_a_long_filename_does_not_widen_the_list(loose_image, qapp, tmp_path):
+    """A title that claimed its full width made the list wider than the page,
+    and every row's buttons ran off the right edge."""
+    lib = loose_image
+    (tmp_path / "Managed_ISOs" / ("x" * 120 + ".iso")).write_bytes(b"iso")
+    lib.refresh_installed_list()
+    short = lib.unmanaged_rows["/Managed_ISOs/mine.iso"]
+    long = lib.unmanaged_rows["/Managed_ISOs/" + "x" * 120 + ".iso"]
+    assert long.minimumSizeHint().width() == short.minimumSizeHint().width()
+
+
+def test_every_row_fits_the_narrowest_window(themed, qapp, tmp_path, monkeypatch):
+    """Regression: a fourth labelled button pushed a row's last one out of the
+    list at the window's minimum width, where nothing scrolls sideways."""
+    from src.core.branding import load_fonts
+    from src.ui.app import VEIMMainWindow
+    from src.ui.dashboard import DashboardView
+    load_fonts()        # widths are the shipped typeface's, as main.py loads it
+    monkeypatch.setattr(DashboardView, "_worker_fetch_and_start_download",
+                        lambda *a, **kw: None)
+    (tmp_path / "Managed_ISOs").mkdir()
+    (tmp_path / "Managed_ISOs" / "archlinux-2026.05.01-x86_64.iso").write_bytes(b"iso")
+    for name in ("mine.iso", "debian-13.4.0-amd64-netinst.iso"):
+        (tmp_path / name).write_bytes(b"iso")
+    window = VEIMMainWindow()
+    window.show_workspace(str(tmp_path))
+    window.show()
+    qapp.processEvents()
+    lib = window.centralWidget().library
+    lib.inventory_mgr.add_or_update("arch", "standard", "Arch Linux", "2026.05.01",
+                                    "archlinux-2026.05.01-x86_64.iso", 3)
+    lib.refresh_installed_list()
+    lib.cards["arch::standard"].set_status_result("2026.10.01", "https://x/y.iso")
+    assert lib.unmanaged_rows["/debian-13.4.0-amd64-netinst.iso"].btn_adopt.isVisible()
+
+    window.resize(window.minimumSize())
+    for _ in range(5):
+        qapp.processEvents()
+
+    from PySide6.QtWidgets import QPushButton
+    viewport = lib.scroll.viewport()
+    for row in [*lib.cards.values(), *lib.unmanaged_rows.values()]:
+        edge = max(b.mapTo(viewport, b.rect().topRight()).x()
+                   for b in row.findChildren(QPushButton) if b.isVisible())
+        assert edge < viewport.width(), row.title.text()
+    window.close()
+
+
+def _age(*paths):
+    """Make files look settled: tidying leaves alone what changed this minute."""
+    old = time.time() - 3600
+    for path in paths:
+        os.utime(path, (old, old))
+
+
+def test_opening_a_drive_sorts_out_managed_isos_and_says_what_it_did(
+        themed, qapp, tmp_path, monkeypatch, tidy_reports):
+    from PySide6.QtCore import Qt
+    from src.ui.dashboard import DashboardView
+    from src.ui.workspace import Workspace
+    monkeypatch.setattr(DashboardView, "_worker_fetch_and_start_download", lambda *a, **kw: None)
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir()
+    (managed / "archlinux-2026.05.01-x86_64.iso").write_bytes(b"iso")
+    (managed / "Win11_25H2_English_x64.iso").write_bytes(b"iso")
+    _age(managed, managed / "archlinux-2026.05.01-x86_64.iso", managed / "Win11_25H2_English_x64.iso")
+
+    ws = Workspace(drive_path=str(tmp_path), on_change_drive=lambda: None)
+    ws.show()
+    qapp.processEvents()
+
+    [done] = tidy_reports
+    assert sorted((d.name, d.outcome) for d in done) == [
+        ("Win11_25H2_English_x64.iso", "moved"), ("archlinux-2026.05.01-x86_64.iso", "adopted")]
+    lib = ws.library
+    assert list(lib.cards) == ["arch::standard"]
+    assert list(lib.unmanaged_rows) == ["/Win11_25H2_English_x64.iso"]
+
+    # Dropped in while VEIM was in the background: sorted out on coming back.
+    (managed / "mine.iso").write_bytes(b"iso")
+    lib._on_app_state(Qt.ApplicationState.ApplicationActive)
+    assert len(tidy_reports) == 1, "a file still arriving is left until it settles"
+    _age(managed, managed / "mine.iso")
+    lib._on_app_state(Qt.ApplicationState.ApplicationActive)
+    assert [(d.name, d.detail) for d in tidy_reports[-1]] == [("mine.iso", "/mine.iso")]
+
+
+def test_a_file_that_cannot_be_moved_is_reported_once(workspace, qapp, tmp_path, monkeypatch,
+                                                      tidy_reports):
+    from src.core.inventory import InventoryManager
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    (managed / "locked.iso").write_bytes(b"iso")
+    _age(managed / "locked.iso")
+    monkeypatch.setattr(InventoryManager, "_evict", lambda self, name: ("", "in use"))
+    lib = workspace.library
+
+    lib.tidy_managed()
+    lib.tidy_managed()
+
+    assert len(tidy_reports) == 1
+    assert [(d.name, d.outcome) for d in tidy_reports[0]] == [("locked.iso", "stayed")]
+
+    # Something new later: the report is about that, not the old stuck file.
+    (managed / "other.iso").write_bytes(b"iso")
+    _age(managed / "other.iso")
+    monkeypatch.setattr(InventoryManager, "_evict",
+                        lambda self, name: ("", "in use") if name == "locked.iso"
+                        else (name, ""))
+    lib.tidy_managed()
+    assert [(d.name, d.outcome) for d in tidy_reports[1]] == [("other.iso", "moved")]
+
+
+def test_a_recognised_image_the_catalog_cannot_update_can_be_named(workspace, qapp, tmp_path,
+                                                                   monkeypatch):
+    from src.ui.dashboard import DashboardView
+    monkeypatch.setattr(DashboardView, "_adoptable_image", staticmethod(lambda image: False))
+    (tmp_path / "debian-13.4.0-amd64-netinst.iso").write_bytes(b"iso")
+    lib = workspace.library
+    lib.refresh_installed_list()
+
+    row = lib.unmanaged_rows["/debian-13.4.0-amd64-netinst.iso"]
+    assert row.btn_adopt.isHidden() and not row.btn_rename.isHidden()
+
+
+def test_a_check_that_outlives_its_drive_view_reports_to_no_one(themed, qapp, tmp_path):
+    """Regression: switching drives while an update check ran raised
+    "Signal source has been deleted" in the check's thread."""
+    import threading
+    from src.ui.dashboard import DashboardView
+    from PySide6.QtCore import QCoreApplication, QEvent
+    view = DashboardView(str(tmp_path))
+    bridge = view.bridge
+    view.deleteLater()
+    # processEvents() leaves deferred deletes alone; this is the drive switch.
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    errors = []
+
+    def worker():
+        try:
+            bridge.check_signal.emit("arch::standard", "Unavailable", "")
+        except Exception as e:          # noqa: BLE001 - the regression is any exception
+            errors.append(e)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+    qapp.processEvents()
+    assert errors == []
+
+
+def test_the_catalog_says_downloading_once_bytes_arrive(themed, qapp):
+    """Regression: a mirror that sends no size kept the catalog on
+    "Starting…" for the whole download."""
+    from src.ui.catalog_view import CatalogView
+    row = CatalogView(on_install=lambda r, f: None).rows["debian"]
+    flavor = row.current_flavor()
+
+    row.set_downloading(flavor)
+    assert row.note.text() == "Starting…"
+
+    row.set_downloading(flavor, _task(50, 0, speed=4.0))
+    assert row.note.text() == "Downloading  ·  N/A%  ·  4.0 MB/s  ·  50 MB"
+    assert row.progress.maximum() == 0, "no size: an indeterminate bar"
+
+    row.set_downloading(flavor, _task(1056, 4800, speed=4.0, eta=200))
+    assert row.note.text().startswith("Downloading  ·  22%  ·  4.0 MB/s  ·  1056 / 4800 MB")
+    assert row.progress.value() == 22
+
+
+def test_the_flavor_list_answers_the_pointer_without_losing_the_choice(themed, qapp):
+    """Regression: the list looked inert - Fusion moved the selection, which
+    marks the current edition, with the pointer, in a shade barely off the
+    list's own. Hover is its own look now, and the choice stays marked."""
+    from PySide6.QtWidgets import QStyle
+    from src.ui.components import FlavorCombo
+    from src.ui.theme import generate_stylesheet
+    combo = FlavorCombo()
+    view = combo.view()
+    assert combo.style().styleHint(QStyle.StyleHint.SH_ComboBox_ListMouseTracking) == 0
+    assert view.hasMouseTracking()
+    assert "QAbstractItemView::item:hover" in generate_stylesheet(themed.current)
+
+
+def test_switching_to_an_installed_edition_does_not_move_the_selector(themed, qapp):
+    """The badge stands in the button's place, at its width: otherwise the
+    selector jumped sideways between an installed edition and another."""
+    from src.ui.catalog_view import CatalogView
+    view = CatalogView(on_install=lambda r, f: None,
+                       installed_lookup=lambda k: {"netinst"} if k == "debian" else set())
+    view.resize(900, 700)
+    view.show()
+    row = view.rows["debian"]
+
+    def selector_right_edge():
+        qapp.processEvents()
+        return row.combo.geometry().right()
+
+    row.combo.setCurrentIndex(row.combo.findData("netinst"))
+    installed = selector_right_edge()
+    assert row.btn.isHidden() and not row.badge.isHidden()
+    row.combo.setCurrentIndex(0 if row.combo.currentIndex() else 1)
+    assert not row.btn.isHidden() and row.btn.text() == "Download"
+    assert selector_right_edge() == installed
+
+
+def test_flavor_lists_are_as_wide_as_their_longest_edition(themed, qapp):
+    """Regression: a 210px floor, and the arrow's room reserved twice, left
+    short lists ("Full") padded out far past their longest entry."""
+    from src.ui.catalog_view import CatalogView
+    view = CatalogView(on_install=lambda r, f: None)
+    view.resize(1200, 900)
+    view.show()
+    qapp.processEvents()
+    for key in ("antix", "ubuntu", "bazzite"):
+        combo = view.rows[key].combo
+        widest = max(combo.fontMetrics().horizontalAdvance(combo.itemText(i))
+                     for i in range(combo.count()))
+        # Left padding, the arrow's area and the border; nothing more.
+        assert widest < combo.width() <= widest + 60, key
+
+
+def test_the_installed_badge_is_the_download_buttons_size(themed, qapp):
+    from src.ui.catalog_view import CatalogView
+    view = CatalogView(on_install=lambda r, f: None,
+                       installed_lookup=lambda k: {"standard"} if k == "arch" else set())
+    view.resize(1200, 900)
+    view.show()
+    qapp.processEvents()
+    installed, other = view.rows["arch"], view.rows["alpine"]
+    assert installed.badge.objectName() == "installedBadge"
+    assert installed.badge.size() == other.btn.size()
+
+
+def test_rows_follow_the_catalogs_name_for_their_edition(workspace, qapp, tmp_path):
+    """Regression: a row kept the name it was downloaded under, so shortening
+    "Netinst (Network Installer)" left drives with the long one - in the
+    library and in the boot menu."""
+    from src.ui.dashboard import DashboardView
+    managed = tmp_path / "Managed_ISOs"
+    managed.mkdir(exist_ok=True)
+    (managed / "debian-13.1.0-amd64-netinst.iso").write_bytes(b"iso")
+    (managed / "archlinux-2026.09.01-x86_64.iso").write_bytes(b"iso")
+    lib = workspace.library
+    lib.inventory_mgr.add_or_update("debian", "netinst", "Debian Netinst (Network Installer)",
+                                    "13.1.0", "debian-13.1.0-amd64-netinst.iso", url="https://x/d.iso")
+    lib.inventory_mgr.add_or_update("arch", "standard", "Arch Linux Standard ISO", "2026.09.01",
+                                    "archlinux-2026.09.01-x86_64.iso", url="https://x/a.iso")
+
+    lib.refresh_installed_list()
+
+    assert lib.cards["debian::netinst"].title.fullText() == "Debian Net Install"
+    assert lib.cards["arch::standard"].title.fullText() == "Arch Linux", "one edition: no label"
+    assert {"image": "/Managed_ISOs/debian-13.1.0-amd64-netinst.iso",
+            "alias": "Debian Net Install 13.1.0"} in _ventoy_aliases(tmp_path)
+
+
+@pytest.mark.parametrize("key,flavor,name", [
+    ("debian", "netinst", "Debian Net Install"),
+    ("ubuntu", "desktop", "Ubuntu Desktop"),          # not "Ubuntu Ubuntu Desktop"
+    ("ubuntu", "kubuntu", "Kubuntu"),
+    ("kali", "purple", "Kali Purple"),
+    ("fedora_atomic", "sway-atomic", "Fedora Sway Atomic"),
+    ("fedora_spins", "xfce", "Fedora Xfce"),
+    ("arch", "standard", "Arch Linux"),               # one edition: no label
+    ("hackeros", "lts", "HackerOS LTS Edition"),
+])
+def test_editions_are_named_without_repeating_themselves(key, flavor, name):
+    from src.ui.dashboard import catalog_name
+    assert catalog_name(registry.get_recipe(key), flavor) == name

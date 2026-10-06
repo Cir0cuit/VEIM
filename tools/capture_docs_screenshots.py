@@ -90,12 +90,16 @@ def build(app, theme: str, page: str):
     for _, _, _, _, filename, _, _ in INSTALLED:
         with open(os.path.join(managed, filename), "wb") as handle:
             handle.write(b"iso")
+    # Loose images live in the drive root: Managed_ISOs holds only what VEIM
+    # manages, and anything else found there is moved out when it opens.
     for filename, size in LOOSE:
-        with open(os.path.join(managed, filename), "wb") as handle:
+        with open(os.path.join(workdir, filename), "wb") as handle:
             handle.truncate(size)
 
-    # Downloads must never actually start while capturing.
+    # Downloads must never actually start while capturing, and the report of
+    # sorting out Managed_ISOs is a modal box that would stop the script.
     DashboardView._worker_fetch_and_start_download = lambda *a, **kw: None
+    DashboardView._report_tidy = lambda self, done: None
     DriveDetector.inspect_path = staticmethod(lambda path, *_: DriveInfo(
         path=DRIVE_LABEL, label="VENTOY", total_gb=DRIVE_TOTAL_GB,
         free_gb=DRIVE_FREE_GB, used_gb=DRIVE_TOTAL_GB - DRIVE_FREE_GB,
@@ -163,11 +167,10 @@ def build_adopt_dialog(app, window) -> AdoptDialog:
     """The dialog behind the library's "Adopt ISOs" button, as it opens."""
     library = window.centralWidget().library
     candidates = sorted(library._adoptable(include_excluded=True), key=lambda c: c.excluded)
-    listed = {c.filename for c in candidates}
-    unrecognised = len([f for f in library.inventory_mgr.unmanaged_files() if f not in listed])
+    unrecognised = library._unrecognised(candidates)
     if not candidates or not unrecognised:
         raise SystemExit("the loose ISOs did not produce both an adoptable and an unknown one")
-    dialog = AdoptDialog(candidates, {c.filename: library._display_name(c) for c in candidates},
+    dialog = AdoptDialog(candidates, {c.ventoy_path: library._display_name(c) for c in candidates},
                          unrecognised=unrecognised, parent=window)
     dialog.resize(820, 420)
     dialog.show()

@@ -159,6 +159,28 @@ def test_extract_refuses_an_archive_without_exactly_one_iso(tmp_path):
         extract_iso_from_zip(str(two), str(tmp_path / "out.iso"))
 
 
+@pytest.mark.parametrize("member", ["netboot.xyz.efi", "disk.IMG"])
+def test_extract_takes_any_one_bootable_member(tmp_path, member):
+    """Ventoy boots EFI applications and disk images as well as ISOs."""
+    import zipfile
+    from src.core.downloader import extract_iso_from_zip, ArchiveError
+
+    archive = tmp_path / "one.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr(member, b"payload")
+        z.writestr("README.md", "not an image")
+    dest = tmp_path / "out"
+    extract_iso_from_zip(str(archive), str(dest))
+    assert dest.read_bytes() == b"payload"
+
+    mixed = tmp_path / "mixed.zip"
+    with zipfile.ZipFile(mixed, "w") as z:
+        z.writestr(member, b"payload")
+        z.writestr("other.iso", _iso_bytes(1000))
+    with pytest.raises(ArchiveError):
+        extract_iso_from_zip(str(mixed), str(tmp_path / "out2"))
+
+
 @pytest.mark.parametrize("reinstall", [False, True], ids=["new", "over-read-only"])
 def test_archive_download_promotes_the_extracted_iso(tmp_path, reinstall):
     """End to end: the archive is fetched, unpacked, and the .zip discarded.

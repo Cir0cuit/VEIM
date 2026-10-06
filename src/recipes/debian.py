@@ -12,7 +12,8 @@ that is mid-update can carry two.
 import re
 from typing import Optional, Tuple
 
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
+from src.core.recipe_base import (
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, published_sha256, version_key)
 from src.core.logger import log
 
 # The same tree, at Debian's two official front doors.
@@ -30,7 +31,7 @@ class DebianRecipe(DistroRecipe):
     description = "The Universal Operating System: legendary rock-solid stability."
 
     FLAVORS = [
-        FlavorInfo("netinst", "Netinst (Network Installer)"),
+        FlavorInfo("netinst", "Net Install"),
         FlavorInfo("gnome", "Live GNOME"),
         FlavorInfo("kde", "Live KDE Plasma"),
         FlavorInfo("xfce", "Live Xfce"),
@@ -73,21 +74,6 @@ class DebianRecipe(DistroRecipe):
 
             _, version, filename = newest
             return DownloadInfo(version=version, url=base_url + filename, filename=filename,
-                                sha256=self._sha256(session, base_url, filename))
+                                sha256=published_sha256(session, base_url + "SHA256SUMS", filename, self.name))
 
         raise ScrapeError(self.name, "; ".join(reasons))
-
-    @staticmethod
-    def _sha256(session, base_url: str, filename: str) -> str:
-        """From the SHA256SUMS beside the image; "" when that cannot be had."""
-        try:
-            resp = session.get(base_url + "SHA256SUMS", timeout=20)
-            resp.raise_for_status()
-        except Exception as e:
-            log.warning(f"[Debian] No checksum for {filename}: {e}")
-            return ""
-        for line in resp.text.splitlines():
-            parts = line.split()
-            if len(parts) == 2 and parts[1].lstrip("*") == filename:
-                return parts[0].lower()
-        return ""

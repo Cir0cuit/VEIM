@@ -1,6 +1,7 @@
 import re
 from typing import List
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs
+from src.core.recipe_base import (
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, published_sha256, version_key)
 from src.core.logger import log
 
 class OpenSUSERecipe(DistroRecipe):
@@ -9,12 +10,12 @@ class OpenSUSERecipe(DistroRecipe):
     description = "Enterprise-grade Linux distribution with YaST and Snapper Btrfs integration."
 
     FLAVORS = [
-        FlavorInfo("tumbleweed-dvd", "Tumbleweed (Offline DVD)"),
+        FlavorInfo("tumbleweed-dvd", "Tumbleweed (DVD)"),
         FlavorInfo("tumbleweed-kde", "Tumbleweed Live (KDE Plasma)"),
         FlavorInfo("tumbleweed-gnome", "Tumbleweed Live (GNOME)"),
-        FlavorInfo("tumbleweed-net", "Tumbleweed (Network Install)"),
-        FlavorInfo("leap-dvd", "Leap (Offline DVD)"),
-        FlavorInfo("leap-net", "Leap (Network Install)")
+        FlavorInfo("tumbleweed-net", "Tumbleweed (Net Install)"),
+        FlavorInfo("leap-dvd", "Leap (DVD)"),
+        FlavorInfo("leap-net", "Leap (Net Install)")
     ]
 
     MIRROR = "https://download.opensuse.org/"
@@ -55,14 +56,19 @@ class OpenSUSERecipe(DistroRecipe):
                             url=f"{self.MIRROR}tumbleweed/iso/{found[snapshot]}")
 
     def _current_leap(self, session) -> str:
+        """The release get.opensuse.org/leap/ redirects to.
+
+        The page is nothing but that redirect. This used to count which
+        "leap/X.Y/" it mentioned most, which on a tie came out differently from
+        one run to the next, and would have taken a beta mentioned more often
+        for the release.
+        """
         r = session.get(self.LEAP_PAGE, timeout=15)
         r.raise_for_status()
-        versions = re.findall(r'leap/(\d+\.\d+)/', r.text)
-        if not versions:
-            raise ScrapeError(self.name, "get.opensuse.org named no current Leap release")
-        # The page links the current release; anything else it mentions
-        # (the previous one, a beta) it mentions less.
-        return max(set(versions), key=versions.count)
+        m = re.search(r'http-equiv="refresh"[^>]*url=/leap/(\d+\.\d+)/', r.text, re.I)
+        if not m:
+            raise ScrapeError(self.name, "get.opensuse.org no longer redirects to a Leap release")
+        return m.group(1)
 
     def _leap(self, session, offline: bool) -> DownloadInfo:
         """The current Leap, in whichever layout that release uses.
@@ -159,10 +165,15 @@ class NixOSRecipe(DistroRecipe):
             # for six months of rebuilt images, so one downloaded in May still
             # read as up to date in October.
             real = resp.url.split("/")[-1]
+            if re.fullmatch(rf'nixos-{variant}-\d+\.\d+beta\d+\.[0-9a-f]+-x86_64-linux\.iso', real):
+                # From branch-off until release the new channel serves betas
+                # ("26.11beta186"); the release before it is still the current one.
+                continue
             m = re.fullmatch(rf'nixos-{variant}-(\d+\.\d+\.\d+)\.[0-9a-f]+-x86_64-linux\.iso', real)
             if not m:
                 raise ScrapeError(self.name, f"the {channel} channel resolved to an unexpected file ({real})")
-            return DownloadInfo(version=m.group(1), url=resp.url, filename=real)
+            return DownloadInfo(version=m.group(1), url=resp.url, filename=real,
+                                sha256=published_sha256(session, resp.url + ".sha256", real, self.name))
 
         raise ScrapeError(self.name, f"no published channel served {fname} (tried {', '.join(tried)})")
 
@@ -180,22 +191,28 @@ class ElementaryRecipe(DistroRecipe):
         session = self.get_session()
         try:
             r = session.get("https://elementary.io/", timeout=8)
-            if r.status_code == 200:
-                # Matched by the image's own name rather than its host or path:
-                # the mirror moved from ams3.dl.elementary.io/download/ to
-                # dl.elementaryos.org/ without the file changing. No version in
-                # the name means the page has changed, and a number written in
-                # here would go on being reported long after it stopped being
-                # the latest release.
-                m = re.search(r'//([\w.\-]+/[^"\'<>\s]*?'
-                              r'(elementaryos-(\d+(?:\.\d+)*)-stable-amd64\.\d+\.iso))', r.text)
-                if m:
-                    return DownloadInfo(version=m.group(3), url=f"https://{m.group(1)}",
-                                        filename=m.group(2))
+            r.raise_for_status()
         except Exception as e:
             log.warning(f"[elementary OS] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not reach elementary.io ({e})")
 
-        raise ScrapeError(self.name, "elementary.io did not hand out a current download link")
+        # Matched by the image's own name rather than its host or path: the
+        # mirror moved from ams3.dl.elementary.io/download/ to
+        # dl.elementaryos.org/ without the file changing. No version in the
+        # name means the page has changed, and a number written in here would
+        # go on being reported long after it stopped being the latest release.
+        found = {}
+        for m in re.finditer(r'//([\w.\-]+/[^"\'<>\s]*?'
+                             r'(elementaryos-(\d+(?:\.\d+)*)-stable-amd64\.(\d+)\.iso))', r.text):
+            found.setdefault((version_key(m.group(3)), m.group(4)), m)
+        if not found:
+            raise ScrapeError(self.name, "elementary.io did not hand out a current download link")
+        m = found[max(found)]
+        # The build date goes into the version: point releases keep the
+        # series, so 8.1.1 is "elementaryos-8.1-stable-amd64.20260219.iso" and
+        # "8.1" alone told a drive holding January's 8.1 that it was current.
+        return DownloadInfo(version=f"{m.group(3)} ({m.group(4)})", url=f"https://{m.group(1)}",
+                            filename=m.group(2))
 
 
 class TuxedoRecipe(DistroRecipe):
@@ -255,10 +272,12 @@ class MageiaRecipe(DistroRecipe):
             log.warning(f"[Mageia] Scrape error: {e}")
             raise ScrapeError(self.name, f"could not reach the Mageia mirror ({e})")
 
-        majors = {int(m) for m in re.findall(r'href="(\d+)/"', r.text)}
+        # Point releases get a directory of their own (4.1/ ... 7.1/), so a
+        # whole number alone would have gone on reporting 10 after 10.1.
+        majors = re.findall(r'href="(\d+(?:\.\d+)?)/"', r.text)
         if not majors:
             raise ScrapeError(self.name, "Mageia mirror listed no release series")
-        major = max(majors)
+        major = max(majors, key=version_key)
 
         suffix = {
             "live-plasma": f"Mageia-{major}-Live-Plasma-x86_64",
@@ -266,6 +285,16 @@ class MageiaRecipe(DistroRecipe):
             "live-xfce": f"Mageia-{major}-Live-Xfce-x86_64",
         }.get(target, f"Mageia-{major}-x86_64")
 
+        # The release directory can appear before its images do.
+        try:
+            r = session.get(f"{self.MIRROR}{major}/", timeout=15)
+            r.raise_for_status()
+        except Exception as e:
+            log.warning(f"[Mageia] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read Mageia {major} on the mirror ({e})")
+        if f"{suffix}/" not in hrefs(r.text):
+            raise ScrapeError(self.name, f"Mageia {major} is the newest release, but has no {suffix} image")
+
         fname = f"{suffix}.iso"
         url = f"{self.MIRROR}{major}/{suffix}/{fname}"
-        return DownloadInfo(version=str(major), url=url, filename=fname)
+        return DownloadInfo(version=major, url=url, filename=fname)

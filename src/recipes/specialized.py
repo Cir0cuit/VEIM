@@ -1,5 +1,8 @@
 import re
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
+from src.core.recipe_base import (
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, SOURCEFORGE_PATHS, hrefs,
+    published_sha256,
+    sourceforge_rss, version_key)
 from src.core.logger import log
 
 
@@ -35,17 +38,22 @@ class ArtixRecipe(DistroRecipe):
         # nothing older beside it.
         found = {}
         for h in hrefs(r.text):
-            m = re.fullmatch(rf'artix-{re.escape(sub)}-(\d{{8}})-x86_64\.iso', h.split("/")[-1])
-            # The page links the weekly test images too, and those are always
-            # the newest thing on it.
-            if m and "weekly" not in h:
+            parts = h.split("/")
+            m = re.fullmatch(rf'artix-{re.escape(sub)}-(\d{{8}})-x86_64\.iso', parts[-1])
+            # Only what sits in an /iso/ directory, whichever mirror. The page
+            # also links weekly-iso/ and testing-iso/ builds, and those are
+            # usually the newest thing on it; naming each one to skip lets the
+            # next such directory through.
+            if m and (len(parts) == 1 or parts[-2] == "iso"):
                 found[m.group(1)] = h
         if not found:
             raise ScrapeError(self.name, f"no current {sub} ISO listed on download.artixlinux.org")
-        ver = max(found)
+        ver = max(found, key=int)
         h = found[ver]
         url = h if h.startswith("http") else f"https://download.artixlinux.org/iso/{h}"
-        return DownloadInfo(version=ver, url=url, filename=h.split("/")[-1])
+        fname = h.split("/")[-1]
+        sha256 = published_sha256(session, url.rsplit("/", 1)[0] + "/sha256sums", fname, self.name)
+        return DownloadInfo(version=ver, url=url, filename=fname, sha256=sha256)
 
 
 class SparkyRecipe(DistroRecipe):
@@ -59,7 +67,7 @@ class SparkyRecipe(DistroRecipe):
         FlavorInfo("lxqt", "LXQt Edition"),
         FlavorInfo("mate", "MATE Edition"),
         FlavorInfo("minimalgui", "MinimalGUI (Openbox)"),
-        FlavorInfo("minimalcli", "MinimalCLI (Console)"),
+        FlavorInfo("minimalcli", "MinimalCLI"),
         FlavorInfo("rolling-xfce", "Rolling: Xfce"),
         FlavorInfo("rolling-kde", "Rolling: KDE Plasma"),
         FlavorInfo("rolling-lxqt", "Rolling: LXQt"),
@@ -91,17 +99,25 @@ class SparkyRecipe(DistroRecipe):
             log.warning(f"[Sparky] Scrape error: {e}")
             raise ScrapeError(self.name, f"could not reach sparkylinux.org ({e})")
 
-        # The stable page links direct ISOs (archive.org) alongside SourceForge
+        # The pages link direct ISOs (archive.org) alongside SourceForge
         # checksum/signature files; match the ISO itself and skip the .sig/.txt
-        # siblings that share the same stem.
-        pattern = rf'https?://[^"\'\s]*?/sparkylinux-([\d.]+)-x86_64-{target}\.iso(?![.\w])'
-        matches = re.findall(pattern, r.text)
-        urls = re.findall(rf'https?://[^"\'\s]*?/sparkylinux-[\d.]+-x86_64-{target}\.iso(?![.\w])', r.text)
-        if not matches or not urls:
-            raise ScrapeError(self.name, f"no current {target} ISO listed on the stable download page")
+        # siblings that share the same stem. Each line has its own version
+        # shape (8.4 against 2026.09), so a page that links the other line's
+        # image cannot pass it off as this one's.
+        ver = r'\d{4}\.\d{2}' if rolling else r'\d{1,2}\.\d+'
+        found = re.findall(
+            rf'(https?://[^"\'\s<>]*?/(sparkylinux-({ver})-x86_64-{target}\.iso)(?![.\w])[^"\'\s<>]*)', r.text)
+        if not found:
+            page = "rolling" if rolling else "stable"
+            raise ScrapeError(self.name, f"no current {target} ISO listed on the {page} download page")
 
-        url = urls[0]
-        return DownloadInfo(version=matches[0], url=url, filename=url.split("/")[-1])
+        # The newest by number, not the first listed: a page that keeps the
+        # previous point release beside the new one lists either first. Of the
+        # two links to one release, the direct ISO over SourceForge's
+        # /download redirect.
+        url, fname, version = max(
+            found, key=lambda f: (version_key(f[2]), not f[0].endswith("/download")))
+        return DownloadInfo(version=version, url=url, filename=fname)
 
 
 class TailsRecipe(DistroRecipe):
@@ -110,24 +126,55 @@ class TailsRecipe(DistroRecipe):
     description = "The Amnesic Incognito Live System — privacy-preserving OS routing all traffic through Tor."
 
     FLAVORS = [
-        FlavorInfo("standard", "Standard ISO Image")
+        FlavorInfo("standard", "Standard ISO")
     ]
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
         try:
             r = session.get("https://tails.net/install/download/", timeout=8)
-            if r.status_code == 200:
-                m = re.search(r'https://download\.tails\.net/tails/stable/tails-amd64-([0-9\.]+)/tails-amd64-([0-9\.]+)\.iso', r.text)
-                if m:
-                    url = m.group(0)
-                    ver = m.group(1)
-                    fname = f"tails-amd64-{ver}.iso"
-                    return DownloadInfo(version=ver, url=url, filename=fname)
+            r.raise_for_status()
         except Exception as e:
             log.warning(f"[Tails] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not reach tails.net ({e})")
 
-        raise ScrapeError(self.name, "no current stable release listed on download.tails.net")
+        # Every stable image the page links, newest by number: while a release
+        # rolls out, or in an upgrade note, the previous one can be listed
+        # first. The directory and the file have to name the same release.
+        found = [m for m in re.findall(
+            r'https://download\.tails\.net/tails/stable/tails-amd64-([\d.]+)/tails-amd64-([\d.]+)\.iso', r.text)
+            if m[0] == m[1]]
+        if not found:
+            raise ScrapeError(self.name, "no current stable release listed on download.tails.net")
+        ver = max((m[0] for m in found), key=version_key)
+        fname = f"tails-amd64-{ver}.iso"
+        url = f"https://download.tails.net/tails/stable/tails-amd64-{ver}/{fname}"
+        return DownloadInfo(version=ver, url=url, filename=fname, sha256=self._sha256(session, url))
+
+    LATEST = "https://tails.net/install/v2/Tails/amd64/stable/latest.json"
+
+    def _sha256(self, session, url: str) -> str:
+        """The hash Tails publishes for exactly `url`, or "".
+
+        latest.json lists each image of the current release with its URL and
+        hash. Matched on the whole URL, which carries the version: if it
+        already describes a newer release than the download page, nothing
+        matches and the image downloads unverified, as before - never checked
+        against another release's hash, which would fail a good download.
+        Any trouble reading it costs the check, never the release.
+        """
+        try:
+            r = session.get(self.LATEST, timeout=8)
+            r.raise_for_status()
+            for inst in r.json().get("installations", []):
+                for path in inst.get("installation-paths", []):
+                    for target in path.get("target-files", []):
+                        sha = str(target.get("sha256", "")).lower()
+                        if target.get("url") == url and re.fullmatch(r"[0-9a-f]{64}", sha):
+                            return sha
+        except Exception as e:
+            log.warning(f"[Tails] No checksum from latest.json: {e}")
+        return ""
 
 
 class FydeOSRecipe(DistroRecipe):
@@ -148,17 +195,27 @@ class FydeOSRecipe(DistroRecipe):
         session = self.get_session()
         try:
             r = session.get(f"https://fydeos.io/download/pc/{self.PAGES[flavor_id]}/", timeout=8)
-            if r.status_code == 200:
-                for h in hrefs(r.text):
-                    if "download.fydeos.io" in h and ".zip" in h:
-                        fname = h.split("/")[-1]
-                        m = re.search(r'v([0-9\.\-A-Z]+)', fname)
-                        ver = m.group(1) if m else "Latest"
-                        return DownloadInfo(version=ver, url=h, filename=fname)
+            r.raise_for_status()
         except Exception as e:
             log.warning(f"[FydeOS] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not reach fydeos.io ({e})")
 
-        raise ScrapeError(self.name, f"fydeos.io listed no current {flavor_id} image")
+        # Every image the page links, by the version in its name. A link with
+        # none ("/latest/FydeOS_for_PC_iris.zip") says nothing a later check
+        # could compare, so it is never the answer; and the newest by number,
+        # since the page may keep an earlier build for older hardware.
+        found = []
+        for h in hrefs(r.text):
+            fname = h.split("/")[-1]
+            # Only what follows the version in a final's name ("-io.bin.zip");
+            # "_v24.0-beta-io.bin.zip" is not 24.0.
+            m = re.search(r'_v(\d+(?:\.\d+)*(?:-SP\d+)?)(?=-io|\.bin|\.zip)', fname)
+            if "download.fydeos.io" in h and fname.endswith(".zip") and m:
+                found.append((m.group(1), h, fname))
+        if not found:
+            raise ScrapeError(self.name, f"fydeos.io listed no {flavor_id} image carrying a version")
+        ver, url, fname = max(found, key=lambda f: version_key(f[0]))
+        return DownloadInfo(version=ver, url=url, filename=fname)
 
 
 class HackerOSRecipe(DistroRecipe):
@@ -167,22 +224,25 @@ class HackerOSRecipe(DistroRecipe):
     description = "Comprehensive penetration testing and ethical hacking distribution built for cybersecurity professionals."
 
     FLAVORS = [
-        FlavorInfo("lts", "LTS Edition (Long Term Support)"),
+        FlavorInfo("lts", "LTS Edition"),
         FlavorInfo("official", "Official Edition"),
         FlavorInfo("cybersecurity", "Cybersecurity Edition"),
         FlavorInfo("gaming", "Gaming Edition"),
-        FlavorInfo("nvidia", "NVIDIA Edition")
     ]
-
-    RSS = "https://sourceforge.net/projects/hackeros/rss?path=/"
 
     # Folder name and the filename marker that identifies each edition. The
     # "official" build carries no marker, so it is matched by elimination.
+    #
+    # Each edition keeps its own schedule (the project's README): LTS ships
+    # with x.0 releases, Gaming with x.3 and x.7, and Cybersecurity follows
+    # Debian Stable rather than Testing. So an edition's newest image is its
+    # current one even when Official has moved on, and the next build is
+    # offered as an update when it lands. NVIDIA is gone: the README calls it
+    # a "frozen edition".
     EDITIONS = {
         "official": ("OFFICIAL", ""),
         "cybersecurity": ("CYBERSECURITY", "-Cybersecurity"),
         "gaming": ("GAMING", "-Gaming"),
-        "nvidia": ("NVIDIA", "-NVIDIA"),
         "lts": ("LTS", "-LTS"),
     }
 
@@ -191,25 +251,36 @@ class HackerOSRecipe(DistroRecipe):
             raise ScrapeError(self.name, f"unknown HackerOS edition {flavor_id!r}")
         folder, marker = self.EDITIONS[flavor_id]
 
+        # The edition's own folder feed, which lists the whole folder. The
+        # project-wide feed holds only the newest few dozen files, and an
+        # edition rebuilt rarely (Gaming) drops out of it.
         session = self.get_session()
         try:
-            r = session.get(self.RSS, timeout=15)
-            r.raise_for_status()
+            feed = sourceforge_rss(session, "hackeros", f"path=/{folder}")
         except Exception as e:
             log.warning(f"[HackerOS] RSS error: {e}")
             raise ScrapeError(self.name, f"could not read the HackerOS release feed ({e})")
 
-        # Feed entries look like .../files/<FOLDER>/HackerOS-V5.0-LTS.iso/download
-        pattern = re.compile(
-            r'/files/' + re.escape(folder) + r'/(?:[A-Z]+/)?(HackerOS-V([\d.]+)' + re.escape(marker) + r'\.iso)/download'
-        )
-        found = pattern.findall(r.text)
+        # Every image directly in the folder; its subfolders (OFFICIAL/GNOME,
+        # OFFICIAL/ARCHIVED) are other desktops or retired builds. Upload names
+        # vary in case ("Gnome", "Xfce"), so match without it, and refuse an
+        # image whose name does not parse rather than skip it: a renamed newer
+        # build skipped leaves the previous one reported as current.
+        name = re.compile(rf'HackerOS-V(\d+(?:\.\d+)*){re.escape(marker)}\.iso', re.I)
+        found = []
+        for path in re.findall(SOURCEFORGE_PATHS, feed):
+            parts = path.split("/")
+            if len(parts) != 3 or parts[1].upper() != folder or not parts[2].lower().endswith(".iso"):
+                continue
+            m = name.fullmatch(parts[2])
+            if not m:
+                raise ScrapeError(self.name, f"cannot tell which release {path} is")
+            found.append((m.group(1), parts[2]))
         if not found:
             raise ScrapeError(self.name, f"release feed listed no {flavor_id} ISO")
 
-        # Newest version first.
-        found.sort(key=lambda f: tuple(int(x) for x in f[1].split(".") if x.isdigit()), reverse=True)
-        fname, ver = found[0]
+        ver, fname = max(found, key=lambda f: version_key(f[0]))
+
         url = f"https://downloads.sourceforge.net/project/hackeros/{folder}/{fname}"
         return DownloadInfo(version=ver, url=url, filename=fname)
 
@@ -222,7 +293,7 @@ class AlmaLinuxRecipe(DistroRecipe):
     FLAVORS = [
         FlavorInfo("minimal", "Minimal Install"),
         FlavorInfo("dvd", "Full DVD"),
-        FlavorInfo("boot", "Boot / Netinstall")
+        FlavorInfo("boot", "Boot (Net Install)")
     ]
 
     ROOT = "https://repo.almalinux.org/almalinux/"

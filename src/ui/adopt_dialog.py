@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 )
 
-from src.core.inventory import AdoptionCandidate
+from src.core.inventory import UnmanagedImage
 from src.ui.components import Row, make_button
 from src.ui.distro_card import human_size
 
@@ -28,19 +28,19 @@ class CandidateRow(Row):
     """One candidate, with its answer as a pair of toggles. Neither pressed
     means "ask me again"."""
 
-    def __init__(self, candidate: AdoptionCandidate, display_name: str, parent=None):
+    def __init__(self, candidate: UnmanagedImage, display_name: str, parent=None):
         super().__init__(parent)
         self.candidate = candidate
 
         self.icon.set_distro(candidate.identity.key)
         self.title.setText(display_name)
         bits = [f"Version {candidate.identity.version}", human_size(candidate.size_bytes),
-                candidate.filename]
+                candidate.path]
         self.meta.setText("  ·  ".join(bits))
-        self.meta.setToolTip(candidate.filename)
+        self.meta.setToolTip(candidate.ventoy_path)
 
-        if candidate.in_root:
-            note = QLabel("In the drive root - adopting moves it into Managed_ISOs.")
+        if not candidate.in_managed:
+            note = QLabel("Adopting moves it into Managed_ISOs, where VEIM keeps what it updates.")
             note.setObjectName("rowMeta")
             self.text_col.addWidget(note)
 
@@ -73,7 +73,7 @@ class CandidateRow(Row):
 
 
 class AdoptDialog(QDialog):
-    def __init__(self, candidates: List[AdoptionCandidate], display_names: Dict[str, str],
+    def __init__(self, candidates: List[UnmanagedImage], display_names: Dict[str, str],
                  unrecognised: int = 0, parent=None):
         super().__init__(parent)
         self.setObjectName("adoptDialog")
@@ -110,7 +110,8 @@ class AdoptDialog(QDialog):
 
         self.rows: List[CandidateRow] = []
         for candidate in candidates:
-            row = CandidateRow(candidate, display_names.get(candidate.filename, candidate.filename))
+            row = CandidateRow(candidate,
+                               display_names.get(candidate.ventoy_path, candidate.filename))
             self.rows.append(row)
             rows_layout.addWidget(row)
         rows_layout.addStretch()
@@ -120,7 +121,7 @@ class AdoptDialog(QDialog):
         if unrecognised:
             plural = "s are" if unrecognised != 1 else " is"
             others = QLabel(
-                f"{unrecognised} other ISO{plural} not listed: renamed, customised, or not "
+                f"{unrecognised} other image{plural} not listed: renamed, customised, or not "
                 "in the catalog, so there is nothing to update from. VEIM never changes those.")
             others.setObjectName("rowMeta")
             others.setWordWrap(True)
@@ -148,5 +149,6 @@ class AdoptDialog(QDialog):
                 row.set_choice(ADOPT)
 
     def choices(self) -> Dict[str, str]:
-        """filename -> ADOPT, EXCLUDE or UNDECIDED."""
-        return {row.candidate.filename: row.choice() for row in self.rows}
+        """ventoy_path -> ADOPT, EXCLUDE or UNDECIDED. Keyed by path: one name
+        can be in two folders."""
+        return {row.candidate.ventoy_path: row.choice() for row in self.rows}

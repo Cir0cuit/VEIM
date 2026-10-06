@@ -1,8 +1,7 @@
 import re
-import time
-from typing import List
 from src.core.recipe_base import (
-    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, SOURCEFORGE_PATHS, hrefs, sourceforge_rss)
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, SOURCEFORGE_PATHS, hrefs, published_sha256,
+    sourceforge_rss, version_key)
 from src.core.logger import log
 
 class PopOSRecipe(DistroRecipe):
@@ -15,46 +14,53 @@ class PopOSRecipe(DistroRecipe):
         FlavorInfo("nvidia", "NVIDIA Edition")
     ]
 
+    DOWNLOAD_PAGE = "https://system76.com/pop/download/"
     API = "https://api.pop-os.org/builds/{release}/{channel}"
 
-    @staticmethod
-    def _releases_to_try(this_year: int) -> List[str]:
-        """Release numbers, newest first, back to the oldest one still served.
+    def _offered(self, session, flavor: str):
+        """(release, channel) the download page's own buttons fetch.
 
-        Pop!_OS numbers its releases after Ubuntu's, so the candidates are
-        known without a list to read them from - and System76 publishes none.
+        The page asks the build API for them in a script -
+        fetchRelease('24.04', 'generic', 'amd64') - and that, not the API, is
+        where System76 says what is released. The API already serves the next
+        release's betas under the release's own number (24.04 build 20 was a
+        beta, while the page still offered 22.04), and keeps answering for a
+        channel the page has dropped: "intel" became "generic" and went on
+        handing out a build a year old. The page's leftover 22.04 links are
+        plain links, which this does not read.
         """
-        return [f"{yy}.{month}" for yy in range(this_year % 100, 21, -1) for month in ("10", "04")]
-
-    def _from_api(self, session, channel: str):
-        for release in self._releases_to_try(time.gmtime().tm_year):
-            r = session.get(self.API.format(release=release, channel=channel), timeout=10)
-            if r.status_code != 200 or not r.text.strip():
-                continue                      # no such release (yet)
-            build = r.json()
-            url, number = build.get("url", ""), str(build.get("build", ""))
-            if url.endswith(".iso") and number:
-                return DownloadInfo(version=f"{build.get('version', release)} (Build {number})",
-                                    url=url, filename=url.split("/")[-1],
-                                    sha256=build.get("sha_sum", ""))
-        return None
+        r = session.get(self.DOWNLOAD_PAGE, timeout=15)
+        r.raise_for_status()
+        calls = re.findall(r"fetchRelease\(\s*'(\d+\.\d+)'\s*,\s*'(\w+)'\s*,\s*'amd64'\s*\)", r.text)
+        if not calls:
+            raise ScrapeError(self.name, "the download page no longer names a release to fetch")
+        release = max((rel for rel, _ in calls), key=version_key)
+        channels = {ch for rel, ch in calls if rel == release}
+        wanted = channels & {"nvidia"} if flavor == "nvidia" else channels - {"nvidia"}
+        if len(wanted) != 1:
+            raise ScrapeError(self.name, f"the download page offers no single {flavor} image of {release} "
+                                         f"(channels: {', '.join(sorted(channels))})")
+        return release, wanted.pop()
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
-        target = "nvidia" if flavor_id.lower() == "nvidia" else "intel"
-
-        # The build API, and nothing else. This used to read the download
-        # page, whose markup still carries 22.04 links long after 24.04
-        # shipped - so a release two years old was served as the current one.
-        # Falling back to that page would bring the same answer back.
+        flavor = "nvidia" if flavor_id.lower() == "nvidia" else "intel"
         try:
-            info = self._from_api(session, target)
+            release, channel = self._offered(session, flavor)
+            r = session.get(self.API.format(release=release, channel=channel), timeout=10)
+            r.raise_for_status()
+            build = r.json() if r.text.strip() else {}
+        except ScrapeError:
+            raise
         except Exception as e:
-            log.warning(f"[Pop!_OS] Build API error: {e}")
-            raise ScrapeError(self.name, f"could not reach System76's build API ({e})")
-        if info:
-            return info
-        raise ScrapeError(self.name, f"System76's build API listed no {target} ISO")
+            log.warning(f"[Pop!_OS] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read System76's release ({e})")
+
+        url, number = build.get("url", ""), str(build.get("build", ""))
+        if not (url.endswith(".iso") and number):
+            raise ScrapeError(self.name, f"System76's build API has no {channel} ISO of {release}")
+        return DownloadInfo(version=f"{build.get('version', release)} (Build {number})",
+                            url=url, filename=url.split("/")[-1], sha256=build.get("sha_sum", ""))
 
 class KDENeonRecipe(DistroRecipe):
     key = "kde_neon"
@@ -69,18 +75,25 @@ class KDENeonRecipe(DistroRecipe):
         session = self.get_session()
         try:
             r = session.get("https://neon.kde.org/download", timeout=10)
-            if r.status_code == 200:
-                for href in hrefs(r.text):
-                    if href.endswith(".iso") and "neon-user-desktop" in href:
-                        fname = href.split("/")[-1]
-                        m = re.search(r'neon-user-desktop-(\d+-\d+)', fname)
-                        ver = m.group(1) if m else "Current"
-                        return DownloadInfo(version=ver, url=href, filename=fname)
+            r.raise_for_status()
         except Exception as e:
             log.warning(f"[KDE Neon] Scrape error: {e}")
             raise ScrapeError(self.name, f"could not reach neon.kde.org ({e})")
 
-        raise ScrapeError(self.name, "neon.kde.org listed no user-edition ISO")
+        # Every dated user build linked, newest taken. An undated link
+        # ("-current.iso") says nothing a later check could compare.
+        found = {}
+        for href in hrefs(r.text):
+            m = re.fullmatch(r'neon-user-desktop-(\d{8}-\d{4})\.iso', href.split("/")[-1])
+            if m:
+                found.setdefault(m.group(1), href)
+        if not found:
+            raise ScrapeError(self.name, "neon.kde.org listed no dated user-edition ISO")
+        ver = max(found)
+        url, fname = found[ver], found[ver].split("/")[-1]
+        # Beside each image: neon-user-desktop-<ver>.sha256sum, no ".iso".
+        sha256 = published_sha256(session, url[:-len(".iso")] + ".sha256sum", fname, self.name)
+        return DownloadInfo(version=ver, url=url, filename=fname, sha256=sha256)
 
 class ZorinRecipe(DistroRecipe):
     key = "zorin"
@@ -117,19 +130,29 @@ class ZorinRecipe(DistroRecipe):
             page = f"{self.DOWNLOAD_PAGE}{major}/{target}/"
             r = session.get(page, timeout=15)
             r.raise_for_status()
-            isos = re.findall(r'https?://[^"\'\s]+?/Zorin-OS-([\d.]+)-([A-Za-z]+)-64-bit\.iso', r.text)
-            urls = re.findall(r'https?://[^"\'\s]+?/Zorin-OS-[\d.]+-[A-Za-z]+-64-bit\.iso', r.text)
         except ScrapeError:
             raise
         except Exception as e:
             log.warning(f"[Zorin] scrape error: {e}")
             raise ScrapeError(self.name, f"could not reach zorin.com ({e})")
 
-        if not isos or not urls:
+        # Every final image the page links, newest by number and then respin -
+        # not the first link, which is the newest only while the page lists
+        # it first. "-r2" is a respin of the same release (17.3, then
+        # 17.3-r1, 17.3-r2); a Beta has the word in its name and no match here.
+        found = {}
+        for m in re.finditer(rf'https?://[^"\'\s]+?/Zorin-OS-(\d+(?:\.\d+)*)-{target.capitalize()}'
+                             rf'-64-bit(?:-r(\d+))?\.iso', r.text):
+            found.setdefault((version_key(m.group(1)), int(m.group(2) or 0)), m)
+        if not found:
             raise ScrapeError(self.name, f"no {target} ISO listed for series {major}")
-
-        version = isos[0][0]
-        url = urls[0]
+        m = found[max(found)]
+        version, respin = m.group(1), m.group(2)
+        if respin:
+            # "18 r3" would number above "18.1" (18, 3 against 18, 1) and hide
+            # that update as a downgrade; "18.0 r3" sorts where it belongs.
+            version = f"{version if '.' in version else version + '.0'} r{respin}"
+        url = m.group(0)
         return DownloadInfo(version=version, url=url, filename=url.split("/")[-1])
 
 
@@ -160,5 +183,7 @@ class LinuxLiteRecipe(DistroRecipe):
 
         ver = max(found, key=lambda v: tuple(int(n) for n in v.split(".")))
         path = found[ver]
-        return DownloadInfo(version=ver, filename=path.rsplit("/", 1)[-1],
-                            url=f"https://downloads.sourceforge.net/project/linux-lite{path}")
+        url, fname = f"https://downloads.sourceforge.net/project/linux-lite{path}", path.rsplit("/", 1)[-1]
+        sha256 = published_sha256(session, url + ".sha256", fname, self.name,
+                                  headers={"User-Agent": "curl/8.4.0"})
+        return DownloadInfo(version=ver, filename=fname, url=url, sha256=sha256)

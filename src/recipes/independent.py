@@ -5,7 +5,7 @@ is the oldest surviving distribution.
 """
 import re
 
-from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, version_key
+from src.core.recipe_base import DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, hrefs, version_key
 from src.core.logger import log
 
 
@@ -107,22 +107,23 @@ class SlackwareRecipe(DistroRecipe):
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
         session = self.get_session()
-        root = "https://mirrors.slackware.com/slackware/"
+        iso_root = "https://mirrors.slackware.com/slackware/slackware-iso/"
         try:
-            index = session.get(root, timeout=20)
+            # The ISO tree, not the package tree: a release's packages go up
+            # before its DVD does, and walking back from a release with no DVD
+            # yet reported the previous one as current.
+            index = session.get(iso_root, timeout=20)
             index.raise_for_status()
-            # 15.0 must rank above 14.2, which a string sort gets wrong.
-            versions = sorted(set(re.findall(r'href="slackware64-(\d+\.\d+)/"', index.text)),
-                              key=version_key)
-            for ver in reversed(versions):
-                listing = session.get(f"{root}slackware-iso/slackware64-{ver}-iso/", timeout=20)
-                if listing.status_code != 200:
-                    continue
-                match = re.search(rf'(slackware64-{re.escape(ver)}-install-dvd\.iso)', listing.text)
-                if match:
-                    fname = match.group(1)
-                    url = f"{root}slackware-iso/slackware64-{ver}-iso/{fname}"
-                    return DownloadInfo(version=ver, url=url, filename=fname)
+            versions = set(re.findall(r'href="slackware64-(\d+\.\d+)-iso/"', index.text))
+            if versions:
+                # A 15.10 must rank above 15.9, which a string sort gets wrong.
+                ver = max(versions, key=version_key)
+                iso_dir = f"{iso_root}slackware64-{ver}-iso/"
+                listing = session.get(iso_dir, timeout=20)
+                listing.raise_for_status()
+                fname = f"slackware64-{ver}-install-dvd.iso"
+                if fname in hrefs(listing.text):
+                    return DownloadInfo(version=ver, url=iso_dir + fname, filename=fname)
         except Exception as e:
             log.warning(f"[Slackware] Scrape error: {e}")
 

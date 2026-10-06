@@ -6,7 +6,8 @@ stale, found on 2026-09-21 by comparing all fifty recipes with DistroWatch and
 endoflife.date:
 
 - Pop!_OS read System76's download page, whose markup still carried 22.04
-  links after 24.04 shipped, and took the first one.
+  links after 24.04 shipped, and took the first one. Then it read the build
+  API's "intel" channel, which the page had replaced with "generic".
 - openSUSE Leap knew only the 15.x file layout, took 16.0 for a release with
   no images, and went on serving 15.6.
 - Tumbleweed, NixOS, AlmaLinux, Rocky and Bazzite reported a label that never
@@ -80,31 +81,31 @@ def _pop_build(release, channel, build):
     return json.dumps({"version": release, "url": url, "build": str(build), "sha_sum": "a" * 64})
 
 
-def test_popos_serves_the_newest_release_the_build_api_has(monkeypatch):
-    api = "https://api.pop-os.org/builds/{}/intel"
+POP_PAGE = "https://system76.com/pop/download/"
+
+
+def test_popos_serves_the_release_the_download_page_fetches(monkeypatch):
+    """The API still answers for the "intel" channel the page dropped, with a
+    build a year old, and for a release the page does not offer yet."""
+    api = "https://api.pop-os.org/builds/{}/{}"
     recipe, session = _with(monkeypatch, PopOSRecipe(), {
-        api.format("22.04"): _pop_build("22.04", "intel", 58),
-        api.format("24.04"): _pop_build("24.04", "intel", 20),
-        api.format("26.04"): "",                      # how the API answers for a release not out yet
+        POP_PAGE: ("<a href=\"https://iso.pop-os.org/22.04/amd64/intel/58/pop-os_22.04_amd64_intel_58.iso\">"
+                   "<script>fetchRelease('24.04', 'generic', 'amd64'); fetchRelease('24.04', 'nvidia', 'amd64');"
+                   "fetchRelease('24.04', 'generic', 'arm64')</script>"),
+        api.format("24.04", "intel"): _pop_build("24.04", "intel", 20),
+        api.format("24.04", "generic"): _pop_build("24.04", "generic", 28),
+        api.format("26.04", "generic"): _pop_build("26.04", "generic", 3),
     })
-    monkeypatch.setattr(PopOSRecipe, "_releases_to_try", staticmethod(lambda year: ["26.10", "26.04", "25.10", "25.04", "24.10", "24.04", "22.04"]))
 
     info = recipe.fetch_download_info("intel")
 
-    assert info.version == "24.04 (Build 20)"
-    assert info.filename == "pop-os_24.04_amd64_intel_20.iso"
+    assert info.version == "24.04 (Build 28)"
+    assert info.filename == "pop-os_24.04_amd64_generic_28.iso"
     assert info.sha256 == "a" * 64
-    assert not any("system76.com" in url for url in session.asked), "read the stale download page"
-
-
-def test_popos_candidates_run_newest_first_down_to_22_04():
-    releases = PopOSRecipe._releases_to_try(2026)
-    assert releases[0] == "26.10" and releases[-1] == "22.04"
-    assert releases.index("26.04") < releases.index("24.04") < releases.index("22.04")
 
 
 def test_popos_refuses_when_the_api_is_silent(monkeypatch):
-    recipe, _ = _with(monkeypatch, PopOSRecipe(), {})
+    recipe, _ = _with(monkeypatch, PopOSRecipe(), {POP_PAGE: "fetchRelease('24.04', 'nvidia', 'amd64')"})
     with pytest.raises(ScrapeError):
         recipe.fetch_download_info("nvidia")
 
@@ -113,8 +114,10 @@ def test_popos_refuses_when_the_api_is_silent(monkeypatch):
 
 SUSE = "https://download.opensuse.org/"
 OPENSUSE = {
-    # 16.0 is linked as current; 16.1 is mentioned once, as the beta it is.
-    "https://get.opensuse.org/leap/": _listing("/leap/16.0/", "/leap/16.0/#download", "/leap/16.1/"),
+    # The page is a redirect to the current release; 16.1 is linked too, as
+    # the beta it is.
+    "https://get.opensuse.org/leap/": ('<meta http-equiv="refresh" content="0; url=/leap/16.0/" />'
+                                       + _listing("/leap/16.0/", "/leap/16.1/", "/leap/16.1/")),
     SUSE + "distribution/leap/16.0/offline/?jsontable": _jsontable(
         "Leap-16.0-offline-installer-x86_64-Build178.9.install.iso",
         "Leap-16.0-offline-installer-x86_64-Build178.27.install.iso",
@@ -243,15 +246,16 @@ def test_almalinux_does_not_fall_back_to_an_older_major(monkeypatch, new_major):
 # ------------------------------------------------------------------ Bazzite
 
 def test_bazzite_is_versioned_by_the_date_its_image_was_built(monkeypatch):
-    url = "https://download.bazzite.gg/bazzite-stable-amd64.iso"
+    url = "https://download.bazzite.gg/bazzite-stable-live-amd64.iso"
     recipe, _ = _with(monkeypatch, BazziteRecipe(), {
-        url: _Resp(url=url, headers={"Last-Modified": "Sat, 18 Oct 2025 22:47:58 GMT"}),
-        url + "-CHECKSUM": "9c8d06cd8e57f2274678edeb14b4b13a79b8117c70571a65199919a66305b5c7  bazzite-stable-amd64.iso\n",
+        url: _Resp(url=url, headers={"Last-Modified": "Tue, 06 Oct 2026 07:01:26 GMT"}),
+        url + "-CHECKSUM": "59b39a8dde73842c6f4fd6f52c875019da0d02d7524e297ff25be3a94f030808  bazzite-stable-live-amd64.iso\n",
     })
     info = recipe.fetch_download_info("desktop-kde")
 
-    assert info.version == "20251018"
-    assert info.sha256.startswith("9c8d06cd")
+    assert info.version == "20261006"
+    assert info.filename == "bazzite-stable-live-20261006-amd64.iso"
+    assert info.sha256.startswith("59b39a8d")
 
 
 def test_bazzite_refuses_rather_than_report_a_label(monkeypatch):
@@ -305,8 +309,8 @@ def _debian_pages(cd_status=200, get_status=200):
                        "debian-13.7.0-amd64-netinst.iso.torrent", "SHA256SUMS")
     live = _listing("debian-live-13.7.0-amd64-kde.iso", "debian-live-13.7.0-amd64-kde-lite.iso",
                     "debian-live-13.7.0-amd64-gnome.iso")
-    sums = ("abc123  debian-13.6.0-amd64-netinst.iso\n"
-            "def456  debian-13.7.0-amd64-netinst.iso\n")
+    sums = (f"{'a' * 64}  debian-13.6.0-amd64-netinst.iso\n"
+            f"{'d' * 64}  debian-13.7.0-amd64-netinst.iso\n")
     return {
         cd + NETINST_DIR: _Resp(listing, cd_status, url=cd + NETINST_DIR),
         cd + NETINST_DIR + "SHA256SUMS": _Resp(sums, cd_status),
@@ -324,7 +328,7 @@ def test_debian_takes_the_newest_image_and_its_checksum(monkeypatch):
     assert info.version == "13.7.0"
     assert info.filename == "debian-13.7.0-amd64-netinst.iso"
     assert info.url == TREES[0] + NETINST_DIR + info.filename
-    assert info.sha256 == "def456"
+    assert info.sha256 == "d" * 64
 
 
 def test_debian_live_matches_the_whole_name(monkeypatch):
@@ -344,7 +348,7 @@ def test_debian_asks_get_debian_org_when_cdimage_answers_500(monkeypatch):
     info = recipe.fetch_download_info("netinst")
     assert info.version == "13.7.0"
     assert info.url == TREES[1] + NETINST_DIR + "debian-13.7.0-amd64-netinst.iso"
-    assert info.sha256 == "def456"
+    assert info.sha256 == "d" * 64
     assert session.asked[0] == TREES[0] + NETINST_DIR
 
 

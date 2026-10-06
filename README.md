@@ -14,7 +14,7 @@ USB drive, and keep every one of them up to date — all from one window.
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-[**Download**](https://github.com/Cir0cuit/VEIM/releases/latest) · 64 distributions and tools · 216 editions
+[**Download**](https://github.com/Cir0cuit/VEIM/releases/latest) · 64 distributions and tools · 225 editions
 
 ![The library](docs/images/library.png)
 
@@ -24,7 +24,7 @@ USB drive, and keep every one of them up to date — all from one window.
 
 ## What VEIM does
 
-**Builds your drive.** Browse a catalog of 64 distributions and tools — 216
+**Builds your drive.** Browse a catalog of 64 distributions and tools — 225
 editions between them — and download any of them straight onto the drive. No
 download pages, no mirror lists, no copying files around afterwards.
 
@@ -34,7 +34,7 @@ button that downloads the new version and swaps it in.
 
 **Looks after what's there.** ISOs you copied onto the drive yourself can be
 adopted and kept up to date too. The Ventoy boot menu gets readable names —
-`Linux Mint Cinnamon` instead of `linuxmint-22.3-cinnamon-64bit.iso`.
+`Linux Mint Cinnamon 22.3` instead of `linuxmint-22.3-cinnamon-64bit.iso`.
 
 > **VEIM needs a Ventoy drive.** Ventoy is a separate tool that you install
 > onto the USB drive once, [from its own site](https://www.ventoy.net/). VEIM
@@ -80,7 +80,9 @@ and closing the dialog simply means not now. The drive picker also has a
 2. **Installed** shows what is on the drive. If there are ISOs you copied there
    yourself, an **Adopt ISOs** button offers to take over the ones VEIM
    recognises, so they can be checked and updated like the rest. The others
-   are left exactly as they are.
+   are listed below, where you can name them in the boot menu or delete them.
+   `Managed_ISOs/` keeps only what VEIM manages: anything else found there is
+   moved to the root of the drive, with a note of what moved and why.
 3. **Browse Catalog** — find something, choose an edition, press **Download**.
    The ISO lands on the drive, ready to boot. Queue as many as you like.
 4. Come back any time and press **Check All Updates**. Anything with a newer
@@ -96,7 +98,7 @@ That's the whole workflow. The rest of this page is detail.
 
 </div>
 
-64 distributions and tools, 216 editions, in nine categories: Beginner
+64 distributions and tools, 225 editions, in nine categories: Beginner
 Friendly, General Purpose, Rolling Release, Enthusiast, Gaming & Performance,
 Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
 
@@ -110,8 +112,8 @@ Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
   Desktops, Spins and Labs.
 - **Download** starts right there and shows progress on the row, so you can
   keep browsing and start the next one. Several downloads run at once.
-- An edition that is already on the drive shows **Installed** and offers
-  **Reinstall**.
+- An edition that is already on the drive shows **Installed**; its updates
+  come from its row in the library.
 
 <!-- catalog:start -->
 
@@ -143,21 +145,21 @@ Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
 
 **General Purpose**
 
-- **Debian** — Netinst (Network Installer), Live GNOME, Live KDE Plasma, Live Xfce, Live Cinnamon, Live MATE, Live LXQt, Live LXDE, Live Standard (Console)
-- **Fedora** — Workstation (GNOME), KDE Plasma Desktop, Server (DVD), Server (Network Install), IoT, Everything (Network Install)
+- **Debian** — Net Install, Live GNOME, Live KDE Plasma, Live Xfce, Live Cinnamon, Live MATE, Live LXQt, Live LXDE, Live Standard (Console)
+- **Fedora** — Workstation (GNOME), KDE Plasma Desktop, Server (DVD), Server (Net Install), IoT, Everything (Net Install)
 - **Fedora Atomic Desktops** — Silverblue (GNOME), Kinoite (KDE Plasma), Sway Atomic, Budgie Atomic, COSMIC Atomic
 - **Fedora Labs** — Astronomy, Design Suite, Games, Jam, Python Classroom, Robotics Suite, Scientific, Security Lab
 - **Fedora Spins** — Xfce, Cinnamon, Budgie, COSMIC, MATE-Compiz, LXQt, LXDE, i3, Sway, Miracle, KDE Plasma Mobile, Sugar on a Stick
 - **KDE Neon** — User Edition
 - **Mageia** — Classic Installer (DVD), Live Edition (KDE Plasma), Live Edition (GNOME), Live Edition (Xfce)
 - **MX Linux** — Xfce, Xfce AHS, KDE Plasma, Fluxbox
-- **openSUSE** — Tumbleweed (Offline DVD), Tumbleweed Live (KDE Plasma), Tumbleweed Live (GNOME), Tumbleweed (Network Install), Leap (Offline DVD), Leap (Network Install)
+- **openSUSE** — Tumbleweed (DVD), Tumbleweed Live (KDE Plasma), Tumbleweed Live (GNOME), Tumbleweed (Net Install), Leap (DVD), Leap (Net Install)
 
 **Rolling Release**
 
 - **Arch Linux** — Standard ISO
 - **Artix Linux** — KDE Plasma (OpenRC), Xfce Edition (OpenRC), Base Edition (OpenRC), Base Edition (Runit), Cinnamon Edition (OpenRC), MATE Edition (OpenRC)
-- **EndeavourOS** — Galileo Neo
+- **EndeavourOS** — Standard
 - **Manjaro** — KDE Plasma, GNOME, Xfce
 - **Omarchy** — Standard
 
@@ -171,33 +173,33 @@ Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
 
 **Gaming & Performance**
 
-- **Bazzite** — Desktop Edition (KDE Plasma), Desktop Edition (GNOME), Handheld Edition (Steam Deck / Ally), NVIDIA Desktop (KDE Plasma)
+- **Bazzite** — Desktop Edition (KDE Plasma), Desktop Edition (GNOME), Handheld Edition (Steam Deck / Ally), Handheld Edition (GNOME), NVIDIA Desktop (KDE Plasma), NVIDIA Open Desktop (KDE Plasma), NVIDIA Desktop (GNOME), NVIDIA Open Desktop (GNOME)
 - **CachyOS** — Desktop Edition, Handheld Edition
 - **Garuda Linux** — Dr460nized (KDE), Dr460nized Gaming Edition, GNOME Edition, KDE Lite, Xfce Edition, Cinnamon Edition, Mokka (KDE), Hyprland Edition, Sway Edition, i3 Edition
 - **Nobara Project** — Official (GNOME), KDE Plasma, GNOME, Steam HTPC, Steam Handheld
-- **PikaOS** — KDE Plasma, GNOME, Hyprland, KDE Plasma (NVIDIA), GNOME (NVIDIA)
+- **PikaOS** — KDE Plasma, GNOME, Hyprland, COSMIC, Niri, KDE Plasma (NVIDIA), GNOME (NVIDIA)
 
 **Security & Privacy**
 
 - **CAINE** — Live 64-bit
-- **HackerOS** — LTS Edition (Long Term Support), Official Edition, Cybersecurity Edition, Gaming Edition, NVIDIA Edition
-- **Kali Linux** — Installer, Network Installer, Kali Purple
+- **HackerOS** — LTS Edition, Official Edition, Cybersecurity Edition, Gaming Edition
+- **Kali Linux** — Installer, Net Install, Kali Purple
 - **Parrot OS** — Security Edition, Home Edition
 - **Qubes OS** — Installer
-- **Tails** — Standard ISO Image
+- **Tails** — Standard ISO
 
 **Server & Enterprise**
 
-- **AlmaLinux OS** — Minimal Install, Full DVD, Boot / Netinstall
+- **AlmaLinux OS** — Minimal Install, Full DVD, Boot (Net Install)
 - **CentOS Stream** — DVD, Boot
-- **FreeBSD** — Installer (disc1), Installer with packages (dvd1), Network installer (bootonly)
+- **FreeBSD** — Installer (disc1), Installer with packages (dvd1), Net Install (bootonly)
 - **IPFire** — Installer x86_64
-- **openEuler** — LTS (DVD), LTS (Network Install), Innovation release (DVD), Innovation release (Network Install)
-- **Oracle Linux** — Full ISO (DVD), Boot ISO
+- **openEuler** — LTS (DVD), LTS (Net Install), Innovation (DVD), Innovation (Net Install)
+- **Oracle Linux** — Full DVD, Boot
 - **Proxmox** — Virtual Environment, Backup Server, Mail Gateway, Datacenter Manager
 - **Rocky Linux** — DVD, Minimal, Boot
 - **Talos Linux** — Bare metal (amd64)
-- **XCP-ng** — Installer, Network installer
+- **XCP-ng** — Installer, Net Install
 
 **Rescue & Diagnostics**
 
@@ -206,7 +208,7 @@ Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
 - **Grml** — Full, Small
 - **hrmpf** — x86_64
 - **Memtest86+** — 64-bit, 64-bit (GRUB)
-- **netboot.xyz** — Standard ISO
+- **netboot.xyz** — Standard ISO, Secure Boot ISO, UEFI (.efi), UEFI SNP (.efi), ARM64 UEFI (.efi)
 - **Rescuezilla** — Standard 64-bit
 - **ShredOS** — Standard x86-64
 - **Super GRUB2 Disk** — Hybrid (BIOS and UEFI), 64-bit UEFI, Legacy BIOS, 32-bit UEFI
@@ -218,7 +220,7 @@ Security & Privacy, Server & Enterprise, Rescue & Diagnostics, and Lightweight.
 - **antiX** — Full, Core
 - **Puppy Linux** — BookwormPup64, FossaPup64, TrixiePup64
 - **Q4OS** — KDE Plasma Live, Trinity Live, Install CD
-- **SparkyLinux** — Xfce Edition, KDE Plasma Edition, LXQt Edition, MATE Edition, MinimalGUI (Openbox), MinimalCLI (Console), Rolling: Xfce, Rolling: KDE Plasma, Rolling: LXQt, Rolling: MATE, Rolling: MinimalGUI, Rolling: MinimalCLI, Rolling: GameOver, Rolling: Multimedia, Rolling: Rescue
+- **SparkyLinux** — Xfce Edition, KDE Plasma Edition, LXQt Edition, MATE Edition, MinimalGUI (Openbox), MinimalCLI, Rolling: Xfce, Rolling: KDE Plasma, Rolling: LXQt, Rolling: MATE, Rolling: MinimalGUI, Rolling: MinimalCLI, Rolling: GameOver, Rolling: Multimedia, Rolling: Rescue
 - **Tiny Core Linux** — CorePlus (x86), TinyCore (x86), CorePure64 (x86_64), TinyCorePure64 (x86_64), Core (x86)
 
 </details>
@@ -273,21 +275,48 @@ that download — the library shows an **Adopt ISOs** button, and you decide.
 </div>
 
 - **Adopt** — it joins the list, checked and updated like anything VEIM
-  downloaded. A file sitting in the drive root is moved into `Managed_ISOs/`.
-- **Leave alone** — VEIM stops asking about it. The button becomes
-  **Excluded ISOs** so you can change your mind later.
+  downloaded. A file anywhere else on the drive is moved into `Managed_ISOs/`,
+  where VEIM keeps what it updates.
+- **Leave alone** — VEIM stops asking about it. It stays in the
+  **Not managed by VEIM** list below the library, where **Adopt** on its row
+  changes your mind.
 - Decide later — it comes up again next time.
 
-A renamed, customised or unrecognised ISO is never listed, tracked or touched.
-It boots as usual; the library just notes how many such files it is leaving
-alone. If any of those sit in the drive root, where Ventoy no longer looks
-once VEIM has set it up, you are offered a plain move into `Managed_ISOs/`
-right after adopting — so they come back into the boot menu, still unmanaged. That's deliberate: a customised Clonezilla mistaken for the official one
-would be "updated" — overwritten — at the next check.
+A renamed, customised or unrecognised ISO is never adopted or updated: it
+boots as usual. That's deliberate: a customised Clonezilla mistaken for the
+official one would be "updated" — overwritten — at the next check.
 
-**Remove** on any row asks which you mean: **Delete File**, or **Keep File,
-Stop Managing**. A kept file stays on the drive and keeps booting; VEIM simply
-stops checking it. That's also the way out for an ISO adopted by mistake.
+### `Managed_ISOs/` holds only what VEIM manages
+
+Whatever else turns up in `Managed_ISOs/` — left there by an earlier version
+of VEIM, or dropped in by you — is sorted out when VEIM opens the drive, and
+again whenever you switch back to it. An image VEIM recognises and can update
+is adopted where it lies. Everything else — an image it does not recognise or
+that you chose to leave alone, any other file, any folder of your own — moves
+to the root of the drive, where Ventoy boots it just the same. A file of the
+same name already in the root is never overwritten: the newcomer becomes
+`name (2).iso`. A dialog then lists each file, what was done with it and why.
+Downloads in progress are left alone.
+
+### Images VEIM doesn't manage
+
+Ventoy searches the whole drive, so everything else it boots — ISO, WIM,
+IMG, VHD(X), `.vtoy` and `.efi` files, in the root or any folder — is listed
+under **Not managed by VEIM**, below the library and on the drive map, where
+it is. Folders Ventoy skips (trash folders, any holding a `.ventoyignore`)
+are skipped here too. VEIM never checks or updates these, but each row can:
+
+- **Adopt** — shown when VEIM recognises the file, as in the dialog above.
+- **Menu Name…** — set the name Ventoy's boot menu shows, written to
+  `ventoy/ventoy.json`. Only for files VEIM does not recognise: everything
+  VEIM manages is named for what it is — distro, edition and version, such
+  as `Linux Mint Cinnamon 22.3` — and renamed with each update.
+- **Delete** — remove it from the drive, after asking.
+
+**Remove** on any installed row asks which you mean: **Delete File**, or
+**Keep File, Stop Managing**. A kept file moves to the drive root and keeps
+booting; VEIM simply stops checking it. That's also the way out for an ISO
+adopted by mistake.
 
 ## Downloads you can rely on
 
@@ -322,8 +351,8 @@ stops checking it. That's also the way out for an ISO adopted by mistake.
 
 | | |
 |---|---|
-| `Managed_ISOs/` | The ISOs, plus `veim_inventory.json`: what each file is, which version, and which files you asked to be left alone. Delete it and you lose only the list — the ISOs stay, and are offered for adoption again. |
-| `ventoy/ventoy.json` | Written by VEIM. Points Ventoy at `Managed_ISOs/` and gives every managed ISO a menu name. Aliases you wrote for files elsewhere on the drive are kept. Because the menu is limited to `Managed_ISOs/`, an ISO left in the drive root drops out of it; the library says so and offers to move it in, without managing it. |
+| `Managed_ISOs/` | The ISOs VEIM downloads and updates, and nothing else, plus `veim_inventory.json`: what each file is, which version, and which files you asked to be left alone. Delete the JSON and you lose only the list — the ISOs stay, and recognised ones are adopted again. |
+| `ventoy/ventoy.json` | VEIM writes menu names here and nothing else: Ventoy searches the whole drive. Every other setting in the file is left as it is. Earlier versions of VEIM pointed Ventoy at `Managed_ISOs/` alone and wrote a default theme; opening a drive with this version takes both out again — a search root or theme you set yourself stays. |
 
 VEIM writes nowhere else on the drive. On your computer it keeps a log, the
 rendered logos and the note of which VEIM release you skipped, in
@@ -377,15 +406,19 @@ the catalog, is left alone on purpose. Images whose filename never changes
 copies, so they are never adopted either; downloading them through the
 catalog instead gives VEIM a version to track.
 
-**An ISO in the drive root disappeared from the boot menu.** Once VEIM has
-written `ventoy/ventoy.json`, Ventoy lists `Managed_ISOs/` only. The library
-notices ISOs left in the root and offers to move them in; that's all it
-takes. They are not managed afterwards, just visible again.
+**The boot menu suddenly shows ISOs from all over the drive.** Earlier
+versions of VEIM told Ventoy to look in `Managed_ISOs/` only, which hid
+everything else. This version takes that out when it opens the drive, so
+Ventoy is back to its own default of searching everywhere. Anything you don't
+want in the menu, delete it — or keep it in a folder holding a file named
+`.ventoyignore`, which Ventoy skips.
 
-**I edited `ventoy.json` by hand and my aliases vanished.** Aliases for files
-in `Managed_ISOs/` are VEIM's to write; it regenerates them from the library.
-Aliases for files anywhere else on the drive are kept exactly as you wrote
-them.
+**I edited `ventoy.json` by hand. Will VEIM keep my aliases?** Yes, except for
+the ISOs VEIM manages: those are always named for the distro, edition and
+version. Every other alias is kept as you wrote it, until the file it names is
+deleted, and VEIM reads the file afresh before each change, so edits made
+while it is open survive. A `ventoy.json` VEIM cannot read is never written
+over; fix it, and menu names work again.
 
 **Something else went wrong.** The log is `veim.log` in
 `%LOCALAPPDATA%\VEIM`, `~/.local/share/VEIM` or

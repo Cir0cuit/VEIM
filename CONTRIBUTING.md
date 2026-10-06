@@ -5,8 +5,8 @@ git clone https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 750-odd tests, no network and no display needed
-pytest -m network       # also resolve all 216 editions against live mirrors
+pytest                  # 1400-odd tests, no network and no display needed
+pytest -m network       # also resolve all 225 editions against live mirrors
 ```
 
 The offline suite runs headless on Qt's `offscreen` platform, and is what CI
@@ -14,8 +14,11 @@ runs on Linux, Windows and macOS across Python 3.10 and 3.12. Network tests are
 excluded by default — a mirror having a bad day should not fail your build. Run
 them when you suspect scraper rot: they fail with the distribution named. The
 live sweep also fails when a recipe reports a label ("latest", "current") in
-place of a version, and when the filename a recipe would write is one that
-`iso_identity` reads back as a different entry, edition or version.
+place of a version, when the filename a recipe would write is one that
+`iso_identity` reads back as a different entry, edition or version, and when a
+recipe reports an older release than [endoflife.date](https://endoflife.date)
+lists for the editions it covers (`pytest -m network -k oracle` runs just that
+check).
 
 Work happens on `dev`. `main` is what gets tagged and released.
 
@@ -53,6 +56,7 @@ src/
     ├── drive_picker.py    startup drive chooser
     ├── dashboard.py       installed library and download orchestration
     ├── distro_card.py     one installed row: check, update in place, remove
+    ├── unmanaged_row.py   one image VEIM leaves alone: adopt, menu name, delete
     ├── downloading_card.py  a fresh install that has no row yet
     ├── adopt_dialog.py    choosing which loose ISOs to take in
     ├── catalog_view.py    browsable catalog
@@ -104,6 +108,18 @@ into the same key, flavor id and version — exact pattern, whole name. That is
 what lets an ISO a user copied onto the drive be recognised and adopted, and
 `pytest -m network` fails when a recipe's filename and its rule disagree.
 Names that never change between releases get no rule on purpose.
+
+Then prove it picks the newest: add a `Case` for it to the matching
+`tests/test_freshness_<group>.py`. The harness in `tests/freshness.py` serves
+your fixture pages through a strict session - a URL the fixture lacks fails the
+test instead of answering 404 - and runs the recipe on every page reversed and
+shuffled, and again with the newest release's pages timing out, where it must
+raise rather than fall back. Its docstring lists what a fixture has to hold: an
+older release with working pages, a pre-release numbered above the newest, and
+a pair of versions that sort differently as text than as numbers. A recipe that
+only reads a pointer the project publishes (a GitHub "latest" release, a fixed
+`latest.iso`) goes in `EXEMPT` with the reason instead. `test_freshness_meta.py`
+fails until every catalog entry is in one or the other.
 
 Add an entry to `ICON_URLS` in `src/core/icons.py`, then run
 `python tools/fetch_icons.py` and commit the PNG it writes to

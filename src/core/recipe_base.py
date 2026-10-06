@@ -151,6 +151,43 @@ def sourceforge_rss(session, project: str, query: str) -> str:
     return r.text
 
 
+def sha256_in(sums: str, filename: str) -> str:
+    """The SHA-256 a checksum list gives `filename`, or "".
+
+    Lists name the file bare, with a "*", or under a folder ("./name",
+    "v8.10/name"), in the GNU layout ("<hash>  name") or the BSD one
+    ("SHA256 (name) = <hash>"). A file that holds a single hash and nothing
+    else is that hash. Only 64 hex digits count, so a SHA-512 beside it in
+    the same list is never taken for it.
+    """
+    name = r'(?:\S*/)?' + re.escape(filename)
+    m = re.search(rf'(?m)^(?:([0-9a-fA-F]{{64}})[ \t]+\*?{name}|SHA256 \({name}\) ?= ?([0-9a-fA-F]{{64}}))\s*$',
+                  sums)
+    if not m:
+        m = re.fullmatch(r'\s*([0-9a-fA-F]{64})\s*', sums)
+    return next(g for g in m.groups() if g).lower() if m else ""
+
+
+def published_sha256(session, url: str, filename: str, who: str, headers: dict = None) -> str:
+    """The SHA-256 the checksum file at `url` gives `filename`.
+
+    "" when that cannot be had - unreadable, not a 200, or not naming the
+    file. The release is known either way; only the check after download is
+    lost, so a checksum is never a reason to refuse one.
+    """
+    try:
+        r = session.get(url, timeout=20, headers=headers)
+        if r.status_code != 200:
+            raise requests.HTTPError(f"HTTP {r.status_code}")
+    except Exception as e:
+        log.warning(f"[{who}] No checksum for {filename} at {url}: {e}")
+        return ""
+    sha256 = sha256_in(r.text, filename)
+    if not sha256:
+        log.warning(f"[{who}] {url} gives no SHA-256 for {filename}")
+    return sha256
+
+
 @dataclass
 class FlavorInfo:
     id: str

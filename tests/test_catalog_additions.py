@@ -14,9 +14,9 @@ from src.recipes.enterprise import (
     CentOSStreamRecipe, FreeBSDRecipe, IPFireRecipe, OpenEulerRecipe, OracleLinuxRecipe,
     ProxmoxRecipe, TalosRecipe, XCPngRecipe)
 from src.recipes.modern_desktop import LinuxLiteRecipe
-from src.recipes.rescue import HrmpfRecipe, SuperGrub2Recipe
+from src.recipes.rescue import HrmpfRecipe, NetbootRecipe, SuperGrub2Recipe
 from src.recipes.security import CaineRecipe, KaliRecipe
-from src.recipes.ubuntu import UbuntuRecipe
+from src.recipes.ubuntu import META_RELEASE, UbuntuRecipe
 from tests.test_stale_recipes import _Resp, _listing, _with
 
 
@@ -100,13 +100,68 @@ def test_talos_is_saved_under_a_name_that_says_which_release_it_is(monkeypatch):
     release = {"tag_name": "v1.14.1", "assets": [
         {"name": "metal-arm64.iso", "browser_download_url": "https://example.invalid/metal-arm64.iso"},
         {"name": "metal-amd64.iso", "browser_download_url": "https://example.invalid/metal-amd64.iso"}]}
-    recipe, _ = _with(monkeypatch, TalosRecipe(), {
-        "https://api.github.com/repos/siderolabs/talos/releases/latest": json.dumps(release)})
+    recipe, _ = _with(monkeypatch, TalosRecipe(), {TalosRecipe.RELEASES: json.dumps([release])})
     info = recipe.fetch_download_info("metal")
 
     assert info.version == "1.14.1"
     assert info.filename == "talos-1.14.1-metal-amd64.iso"
     assert info.url.endswith("/metal-amd64.iso")
+
+
+# ------------------------------------------------------------- netboot.xyz
+
+NETBOOT_API = "https://api.github.com/repos/netbootxyz/netboot.xyz/releases/latest"
+NETBOOT_DL = "https://github.com/netbootxyz/netboot.xyz/releases/download/3.0.3/"
+NETBOOT_SUMS = NETBOOT_DL + "netboot.xyz-sha256-checksums.txt"
+
+
+def _netboot(monkeypatch, tag="3.0.3", sums="", names=None):
+    names = names or ["netboot.xyz.iso", "netboot.xyz-sb.iso", "netboot.xyz.efi",
+                      "netboot.xyz-snp.efi", "netboot.xyz-arm64.efi", "netboot.xyz-snponly.efi",
+                      "netboot.xyz-sha256-checksums.txt"]
+    release = {"tag_name": tag, "assets": [
+        {"name": n, "browser_download_url": NETBOOT_DL + n} for n in names]}
+    pages = {NETBOOT_API: json.dumps(release)}
+    if sums:
+        pages[NETBOOT_SUMS] = sums
+    recipe, _ = _with(monkeypatch, NetbootRecipe(), pages)
+    return recipe
+
+
+@pytest.mark.parametrize("flavor,asset,saved", [
+    ("standard", "netboot.xyz.iso", "netboot.xyz-3.0.3.iso"),
+    ("sb", "netboot.xyz-sb.iso", "netboot.xyz-sb-3.0.3.iso"),
+    ("efi", "netboot.xyz.efi", "netboot.xyz-3.0.3.efi"),
+    ("snp", "netboot.xyz-snp.efi", "netboot.xyz-snp-3.0.3.efi"),
+    ("arm64", "netboot.xyz-arm64.efi", "netboot.xyz-arm64-3.0.3.efi"),
+])
+def test_netboot_saves_each_edition_under_a_name_that_says_which_release(monkeypatch, flavor, asset, saved):
+    sums = ("# netboot.xyz bootloaders\n"
+            f"{'b' * 64} *netboot.xyz-snponly.efi\n"
+            f"{'a' * 64} *{asset}\n")
+    info = _netboot(monkeypatch, sums=sums).fetch_download_info(flavor)
+
+    assert info.version == "3.0.3"
+    assert info.filename == saved
+    assert info.url == NETBOOT_DL + asset
+    assert info.sha256 == "a" * 64
+
+
+def test_netboot_downloads_without_a_checksum_the_release_does_not_list(monkeypatch):
+    info = _netboot(monkeypatch, sums=f"{'b' * 64} *netboot.xyz-snponly.efi\n").fetch_download_info("efi")
+    assert info.filename == "netboot.xyz-3.0.3.efi"
+    assert info.sha256 == ""
+
+
+def test_netboot_refuses_a_release_without_the_edition(monkeypatch):
+    recipe = _netboot(monkeypatch, names=["netboot.xyz.iso"])
+    with pytest.raises(ScrapeError):
+        recipe.fetch_download_info("arm64")
+
+
+def test_netboot_refuses_a_tag_that_is_not_a_version(monkeypatch):
+    with pytest.raises(ScrapeError):
+        _netboot(monkeypatch, tag="latest").fetch_download_info("standard")
 
 
 # ------------------------------------------------------------ CentOS Stream
@@ -254,9 +309,14 @@ def test_kali_editions_are_matched_by_their_whole_name(monkeypatch):
         recipe.fetch_download_info("live")
 
 
+# Which series are past end of life; none of these are.
+UBUNTU_META = "Dist: noble\nVersion: 24.04.5 LTS\nSupported: 1\n\nDist: resolute\nVersion: 26.04.1 LTS\nSupported: 1\n"
+
+
 def test_ubuntu_does_not_serve_the_previous_release_because_of_a_timeout(monkeypatch):
     base = "https://cdimage.ubuntu.com/ubuntucinnamon/releases/"
     recipe, _ = _with(monkeypatch, UbuntuRecipe(), {
+        META_RELEASE: UBUNTU_META,
         base: _listing("25.10/", "26.04.1/"),
         base + "26.04.1/": TimeoutError("timed out"),
         base + "25.10/release/": _listing("ubuntucinnamon-25.10-desktop-amd64.iso"),
@@ -268,6 +328,7 @@ def test_ubuntu_does_not_serve_the_previous_release_because_of_a_timeout(monkeyp
 def test_ubuntu_flavours_are_found_by_their_own_prefix(monkeypatch):
     base = "https://cdimage.ubuntu.com/ubuntu-unity/releases/"
     recipe, _ = _with(monkeypatch, UbuntuRecipe(), {
+        META_RELEASE: UBUNTU_META,
         base: _listing("24.04.5/", "26.04/"),
         base + "26.04/release/": _listing("ubuntu-unity-26.04-desktop-amd64.iso"),
     })

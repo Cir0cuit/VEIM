@@ -19,7 +19,7 @@ def test_version_comes_from_the_download_link(monkeypatch):
     page = '<a href="//ams3.dl.elementary.io/download/abc=/elementaryos-8.1-stable-amd64.20260219.iso">'
     info = _recipe(monkeypatch, page).fetch_download_info("stable")
 
-    assert info.version == "8.1"
+    assert info.version == "8.1 (20260219)"
     assert info.filename == "elementaryos-8.1-stable-amd64.20260219.iso"
 
 
@@ -42,6 +42,6 @@ def test_link_on_the_dl_elementaryos_org_mirror(monkeypatch):
     )
     info = _recipe(monkeypatch, page).fetch_download_info("stable")
 
-    assert info.version == "8.1"
+    assert info.version == "8.1 (20260219)"
     assert info.url == f"{host}/elementaryos-8.1-stable-amd64.20260219.iso"
     assert info.filename == "elementaryos-8.1-stable-amd64.20260219.iso"

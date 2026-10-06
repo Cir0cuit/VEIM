@@ -6,8 +6,13 @@ systemd; Q4OS targets older hardware; Grml is a sysadmin live system.
 import re
 
 from src.core.recipe_base import (
-    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, sourceforge_rss, version_key)
+    DistroRecipe, FlavorInfo, DownloadInfo, ScrapeError, SOURCEFORGE_PATHS, hrefs, published_sha256,
+    sourceforge_rss, version_key)
 from src.core.logger import log
+
+PRERELEASE = re.compile(r"[-_.](?:alpha|beta|rc|testing)", re.IGNORECASE)
+# SourceForge answers a browser with its download page, not the file.
+_CURL = {"User-Agent": "curl/8.4.0"}
 
 
 class MXLinuxRecipe(DistroRecipe):
@@ -40,6 +45,16 @@ class MXLinuxRecipe(DistroRecipe):
                               key=version_key)
             if versions:
                 ver = versions[-1]
+                # A final named another way (23.x Xfce was MX-23.6_x64.iso)
+                # matches nothing above, and the release before it would be
+                # served as current for as long as it stays in the feed.
+                newer = [path for path in re.findall(SOURCEFORGE_PATHS, feed)
+                         for m in [re.search(r"/MX-(\d+(?:\.\d+)*)[^/]*x64[^/]*\.iso$", path)]
+                         if m and not PRERELEASE.search(path.rsplit("/", 1)[-1])
+                         and version_key(m.group(1)) > version_key(ver)]
+                if newer:
+                    raise ScrapeError(self.name, f"{newer[0]} is newer than {ver} and not named "
+                                                 f"MX-<version>_{edition}_x64.iso")
                 fname = f"MX-{ver}_{edition}_x64.iso"
                 url = (f"https://downloads.sourceforge.net/project/mx-linux/"
                        f"Final/{edition.split('_')[0]}/MX-{ver}/{fname}")
@@ -48,7 +63,11 @@ class MXLinuxRecipe(DistroRecipe):
                 link = re.search(rf'(https://[^\s<>"]*{re.escape(fname)})[^\s<>"]*', feed)
                 if link:
                     url = link.group(1)
-                return DownloadInfo(version=ver, url=url, filename=fname)
+                return DownloadInfo(version=ver, url=url, filename=fname,
+                                    sha256=published_sha256(session, url + ".sha256", fname, self.name,
+                                                            headers=_CURL))
+        except ScrapeError:
+            raise
         except Exception as e:
             log.warning(f"[MX Linux] Scrape error: {e}")
 
@@ -74,7 +93,9 @@ class AntiXRecipe(DistroRecipe):
             # project's own download page is the reliable source.
             resp = session.get("https://antixlinux.com/download/", timeout=20)
             resp.raise_for_status()
-            matches = re.findall(rf'antiX-(\d+(?:\.\d+)*)[\w.]*_x64-{flavor_id}\.iso', resp.text)
+            # The whole final name: a suffix after the version is a beta
+            # (antiX-27_b1) or another init (antiX-26.1-runit), not this image.
+            matches = re.findall(rf'antiX-(\d+(?:\.\d+)*)_x64-{re.escape(flavor_id)}\.iso', resp.text)
             if matches:
                 ver = sorted(set(matches), key=version_key)[-1]
                 fname = f"antiX-{ver}_x64-{flavor_id}.iso"
@@ -105,7 +126,10 @@ class DevuanRecipe(DistroRecipe):
 
         Devuan keeps every past codename directory served, so picking the
         alphabetically last name would land on an old release: "jessie" sorts
-        after "excalibur". The version inside the filenames is what ranks them.
+        after "excalibur". The version inside the filenames is what ranks them,
+        so every listing has to be read: one that cannot be would let an older
+        codename win. Only a 404 - a codename with no installer images - is
+        passed over.
         """
         index = session.get("https://files.devuan.org/", timeout=20)
         index.raise_for_status()
@@ -113,20 +137,18 @@ class DevuanRecipe(DistroRecipe):
 
         best = None
         for codename in codenames:
-            try:
-                listing = session.get(
-                    f"https://files.devuan.org/{codename}/installer-iso/", timeout=15)
-                if listing.status_code != 200:
-                    continue
-                found = re.findall(r'devuan_[a-z]+_(\d+(?:\.\d+)*)_amd64[\w.\-]*\.iso',
-                                   listing.text)
-                if not found:
-                    continue
-                newest = sorted(set(found), key=version_key)[-1]
-                if best is None or version_key(newest) > version_key(best[1]):
-                    best = (codename, newest)
-            except Exception:
+            listing = session.get(
+                f"https://files.devuan.org/{codename}/installer-iso/", timeout=15)
+            if listing.status_code == 404:
                 continue
+            listing.raise_for_status()
+            found = re.findall(r'devuan_[a-z]+_(\d+(?:\.\d+)*)_amd64[\w.\-]*\.iso',
+                               listing.text)
+            if not found:
+                continue
+            newest = sorted(set(found), key=version_key)[-1]
+            if best is None or version_key(newest) > version_key(best[1]):
+                best = (codename, newest)
         return best
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
@@ -138,20 +160,23 @@ class DevuanRecipe(DistroRecipe):
             current = self._current_release(session)
             if current:
                 codename, ver = current
+                fname = f"{codename}_{ver}_amd64_{flavor_id}.iso"
                 for directory in ("installer-iso", "desktop-live"):
                     listing = session.get(
                         f"https://files.devuan.org/{codename}/{directory}/", timeout=20)
-                    if listing.status_code != 200:
+                    if listing.status_code == 404:
                         continue
-                    match = re.search(
-                        rf'(devuan_{codename.split("_")[1]}_{re.escape(ver)}[\w.]*_amd64_{flavor_id}\.iso)',
-                        listing.text)
-                    if match:
-                        fname = match.group(1)
-                        url = f"https://files.devuan.org/{codename}/{directory}/{fname}"
-                        return DownloadInfo(version=ver, url=url, filename=fname)
+                    listing.raise_for_status()
+                    if fname in hrefs(listing.text):
+                        folder = f"https://files.devuan.org/{codename}/{directory}/"
+                        # installer-iso/ has one list for all its images;
+                        # desktop-live/ has a .sha256 beside the image.
+                        sums = "SHA256SUMS.txt" if directory == "installer-iso" else fname + ".sha256"
+                        return DownloadInfo(version=ver, url=folder + fname, filename=fname,
+                                            sha256=published_sha256(session, folder + sums, fname, self.name))
         except Exception as e:
             log.warning(f"[Devuan] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read files.devuan.org ({e})")
 
         raise ScrapeError(self.name, f"no current {flavor_id} image listed on files.devuan.org")
 
@@ -167,31 +192,50 @@ class Q4OSRecipe(DistroRecipe):
         FlavorInfo("instcd", "Install CD"),
     ]
 
-    _SUFFIX = {"plasma": "", "trinity": "-tde", "instcd": "-instcd"}
+    # 6.x names its Plasma and Trinity images q4os-6.9-x64.r1.iso and
+    # q4os-6.9-x64-tde.r1.iso; the 7.0 testing builds say -plasma and -trinity.
+    _SUFFIXES = {"plasma": ("", "-plasma"), "trinity": ("-tde", "-trinity"), "instcd": ("-instcd",)}
 
     def fetch_download_info(self, flavor_id: str) -> DownloadInfo:
-        suffix = self._SUFFIX.get(flavor_id)
-        if suffix is None:
+        suffixes = self._SUFFIXES.get(flavor_id)
+        if suffixes is None:
             raise ScrapeError(self.name, f"unknown Q4OS image {flavor_id!r}")
 
         session = self.get_session()
         try:
-            feed = sourceforge_rss(session, "q4os", "path=/")
-            # Trailing "-testing" builds share the naming scheme and must not be
-            # served as the current release.
-            pattern = rf'q4os-(\d+(?:\.\d+)*)-x64{re.escape(suffix)}\.r(\d+)\.iso'
-            found = re.findall(pattern, feed)
+            # /stable only: the project's whole feed also carries /oldstable,
+            # /depreciated and /testing, and a release that moved to oldstable
+            # went on matching after its successor came out.
+            feed = sourceforge_rss(session, "q4os", "path=/stable")
+            names = [path.rsplit("/", 1)[-1] for path in re.findall(SOURCEFORGE_PATHS, feed)]
+            # The whole name, so a "-testing" build is never one of these.
+            pattern = re.compile(r'q4os-(\d+(?:\.\d+)*)-x64(-[a-z]+)?\.r(\d+)\.iso')
+            found = [(version_key(m.group(1)), int(m.group(3)), m.group(1), name)
+                     for name in names for m in [pattern.fullmatch(name)]
+                     if m and (m.group(2) or "") in suffixes]
             if found:
-                ver, rev = max(found, key=lambda pair: (version_key(pair[0]), int(pair[1])))
-                fname = f"q4os-{ver}-x64{suffix}.r{rev}.iso"
+                _, _, ver, fname = max(found)
+                # A newer stable image under a name this does not know means
+                # the matched one is no longer current.
+                newer = [name for name in names
+                         for m in [re.fullmatch(r"q4os-(\d+(?:\.\d+)*)-x64\S*\.iso", name)]
+                         if m and not PRERELEASE.search(name) and version_key(m.group(1)) > version_key(ver)]
+                if newer:
+                    raise ScrapeError(self.name, f"stable holds {newer[0]}, newer than {ver} "
+                                                 f"and not a {flavor_id} image this knows")
                 link = re.search(rf'(https://[^\s<>"]*{re.escape(fname)})[^\s<>"]*', feed)
                 url = link.group(1) if link else (
-                    f"https://downloads.sourceforge.net/project/q4os/{fname}")
+                    f"https://downloads.sourceforge.net/project/q4os/stable/{fname}")
                 return DownloadInfo(version=ver, url=url, filename=fname)
+        except ScrapeError:
+            raise
         except Exception as e:
             log.warning(f"[Q4OS] Scrape error: {e}")
 
         raise ScrapeError(self.name, f"no current {flavor_id} image listed on SourceForge")
+
+
+GRML_DOWNLOAD = "https://grml.org/download/"
 
 
 class GrmlRecipe(DistroRecipe):
@@ -210,19 +254,22 @@ class GrmlRecipe(DistroRecipe):
 
         session = self.get_session()
         try:
-            listing = session.get("https://download.grml.org/", timeout=20)
-            listing.raise_for_status()
-            # Releases are dated (2026.09), so a plain string sort is correct
-            # here and newest-last.
-            versions = sorted(set(re.findall(
-                rf'grml-{flavor_id}-(\d{{4}}\.\d{{2}})-amd64\.iso', listing.text)))
-            if versions:
-                ver = versions[-1]
-                fname = f"grml-{flavor_id}-{ver}-amd64.iso"
-                return DownloadInfo(version=ver,
-                                    url=f"https://download.grml.org/{fname}",
-                                    filename=fname)
+            # grml.org's own download page links the current release only.
+            # download.grml.org redirects to a mirror of its choosing, and a
+            # mirror that has not synced a release lists the one before it.
+            page = session.get(GRML_DOWNLOAD, timeout=20)
+            page.raise_for_status()
         except Exception as e:
             log.warning(f"[Grml] Scrape error: {e}")
+            raise ScrapeError(self.name, f"could not read {GRML_DOWNLOAD} ({e})")
 
-        raise ScrapeError(self.name, f"no current {flavor_id} image listed on download.grml.org")
+        pattern = re.compile(rf'https://download\.grml\.org/'
+                             rf'(grml-{flavor_id}-(\d{{4}}\.\d{{2}}(?:\.\d+)*)-amd64\.iso)')
+        found = [(version_key(m.group(2)), m.group(2), m.group(1), m.group(0))
+                 for href in hrefs(page.text) for m in [pattern.fullmatch(href)] if m]
+        if not found:
+            raise ScrapeError(self.name, f"no {flavor_id} amd64 image linked on {GRML_DOWNLOAD}")
+        _, ver, fname, url = max(found)
+        sums = [h for h in hrefs(page.text) if h.endswith(f"/SHA256SUMS-{ver}")]
+        return DownloadInfo(version=ver, url=url, filename=fname,
+                            sha256=published_sha256(session, sums[0], fname, self.name) if sums else "")

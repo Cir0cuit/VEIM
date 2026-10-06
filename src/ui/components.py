@@ -8,7 +8,7 @@ from typing import Callable, Optional
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QComboBox, QListView, QHBoxLayout,
     QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout, QProgressBar,
-    QToolTip
+    QToolTip,
 )
 from PySide6.QtCore import Qt, QSize, QRect, QRectF, QPoint, QPointF
 from PySide6.QtGui import (
@@ -42,8 +42,16 @@ def fmt_eta(seconds: int) -> str:
 
 def show_progress(bar: QProgressBar, meta: QLabel, task: DownloadTask,
                   lead: str = "Downloading"):
-    """Put a transfer on a row: fill the bar and state the numbers in `meta`."""
+    """Put a transfer on a row: fill the bar and state the numbers in `meta`.
+
+    A transfer reports progress only while bytes arrive, or with a note when
+    it is between attempts - so this always says what is happening, and
+    "Starting…" is left to the row before the first report. What cannot be
+    known is said to be unknown: "N/A%" when the server sent no size, rather
+    than no percentage at all, which read as if nothing were downloading.
+    """
     done = task.downloaded_bytes / (1024 ** 2)
+    speed = f"{task.speed_mbps:.1f} MB/s" if task.speed_mbps > 0 else ""
     if task.total_bytes > 0:
         pct = int(task.downloaded_bytes / task.total_bytes * 100)
         bar.setRange(0, 100)
@@ -51,13 +59,13 @@ def show_progress(bar: QProgressBar, meta: QLabel, task: DownloadTask,
         size = f"{done:.0f} / {task.total_bytes / (1024 ** 2):.0f} MB"
         # The percentage is its own bit: glued to a lead that ends in a version
         # ("Updating to 2026.10.06 45%") it reads as part of the version.
-        bits = [lead, f"{pct}%", f"{task.speed_mbps:.1f} MB/s", size,
-                f"{fmt_eta(task.eta_seconds)} left"]
+        bits = [lead, f"{pct}%", speed, size,
+                f"{fmt_eta(task.eta_seconds)} left" if task.eta_seconds > 0 else ""]
     else:
         # Unknown total: an indeterminate bar rather than a fake 0%.
         bar.setRange(0, 0)
         size = f"{done:.0f} MB"
-        bits = [lead, f"{task.speed_mbps:.1f} MB/s", size]
+        bits = [lead, "N/A%", speed, size]
     if task.note:
         # Between attempts: what is being waited for, not a speed of 0.
         bits = [task.note, size]
@@ -81,6 +89,12 @@ class _PlainListPopup(QProxyStyle):
 
     def styleHint(self, hint, option=None, widget=None, returnData=None):
         if hint == QStyle.StyleHint.SH_ComboBox_Popup:
+            return 0
+        # Fusion moves the selection - which marks the edition chosen now -
+        # along with the pointer, so the mark wandered off it and the hover
+        # was the selection's faint shade. The hover gets its own look instead
+        # (::item:hover), and the current edition keeps its mark.
+        if hint == QStyle.StyleHint.SH_ComboBox_ListMouseTracking:
             return 0
         return super().styleHint(hint, option, widget, returnData)
 
@@ -122,7 +136,14 @@ class FlavorCombo(QComboBox):
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         view.setUniformItemSizes(True)
+        # The item under the pointer answers it: without mouse tracking the
+        # stylesheet's ::item:hover never fires, and the list looked inert
+        # until clicked. A pointer cursor says the same as on every button.
+        view.setMouseTracking(True)
+        view.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover)
+        view.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setView(view)
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def showPopup(self):
         # Every entry is shown; a dropdown that scrolls hides options behind
@@ -256,6 +277,10 @@ class ElidingLabel(QLabel):
 
     def fullText(self) -> str:
         return self._full
+
+    def setText(self, text: str):
+        """Drop-in for QLabel.setText, so a Row's title can be one of these."""
+        self.setFullText(text)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -395,8 +420,9 @@ def _hue_distance(a: float, b: float) -> float:
 
 class DriveMap(QWidget):
     """The drive to scale, left to right: each managed ISO as a block the size
-    of its file, everything else on the drive, the downloads in flight (what
-    they have written, then what they still need), then free space.
+    of its file, the images VEIM leaves alone, everything else on the drive,
+    the downloads in flight (what they have written, then what they still
+    need), then free space.
 
     Each ISO's block takes the hue of its logo. Pointing at a block names it,
     and pointing at a row outlines that row's block.
@@ -408,6 +434,7 @@ class DriveMap(QWidget):
     SWATCH = 10
     WRITTEN = "Downloaded so far"
     RESERVED = "Reserved for downloads"
+    UNMANAGED = "Not managed by VEIM"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -416,6 +443,7 @@ class DriveMap(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._isos: list = []           # (ident, distro key, name, bytes), in row order
         self._total = self._free = self._reserved = self._written = 0.0
+        self._unmanaged = 0.0           # GB of images VEIM does not manage
         self._blocks: list = []         # (QRectF, tooltip) as last painted
         self._hovered = -1              # block under the pointer
         self._marked = None             # ident of the ISO whose row is under it
@@ -426,6 +454,11 @@ class DriveMap(QWidget):
     def set_isos(self, isos):
         """(ident, distro key, name, size in bytes) for each managed ISO."""
         self._isos = list(isos)
+        self.update()
+
+    def set_unmanaged(self, size_bytes: int):
+        """Bytes of bootable images VEIM does not manage."""
+        self._unmanaged = size_bytes / (1024 ** 3)
         self.update()
 
     def set_drive(self, total_gb: float, free_gb: float, reserved_gb: float = 0.0,
@@ -465,8 +498,10 @@ class DriveMap(QWidget):
             previous = hue
             parts.append((name, size / (1024 ** 3), colour))
 
-        isos_gb = sum(gb for _, gb, _ in parts)
-        other = max(0.0, self._total - self._free - isos_gb - self._written)
+        if self._unmanaged > 0:
+            parts.append((self.UNMANAGED, self._unmanaged, QColor(c.unmanaged)))
+        known = sum(gb for _, gb, _ in parts)
+        other = max(0.0, self._total - self._free - known - self._written)
         if other > 0:
             neutral = QColor(c.text_muted)
             neutral.setAlphaF(0.4)
@@ -550,7 +585,9 @@ class DriveMap(QWidget):
             items.append(([colour for _, _, colour in parts[:min(count, 3)]],
                           f"{_gb_text(isos_gb)} in {count} {plural}"))
         for name, gb, colour in parts[count:]:
-            if name == "Other files":
+            if name == self.UNMANAGED:
+                items.append(([colour], f"Not managed {_gb_text(gb)}"))
+            elif name == "Other files":
                 items.append(([colour], f"Other files {_gb_text(gb)}"))
         in_flight = self._written + self._reserved
         if in_flight > 0:
@@ -718,9 +755,14 @@ class Row(QFrame):
 
     Rows are ~72px instead of the previous ~280px cards, so a full catalog is
     scannable instead of showing four entries per screen.
+
+    The title elides rather than claiming its full width: a long filename
+    as a title made that row - and with it the whole list - wider than the
+    page, and every row's buttons ran off its right edge. `elide_meta` does
+    the same for the line below, for rows that never wrap it.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, elide_meta: bool = False):
         super().__init__(parent)
         self.setObjectName("row")
 
@@ -735,11 +777,12 @@ class Row(QFrame):
         self.text_col.setSpacing(3)
         self.text_col.setContentsMargins(0, 0, 0, 0)
 
-        self.title = QLabel()
+        # In the middle, so a filename keeps its extension.
+        self.title = ElidingLabel(mode=Qt.TextElideMode.ElideMiddle)
         self.title.setObjectName("rowTitle")
         self.text_col.addWidget(self.title)
 
-        self.meta = QLabel()
+        self.meta = ElidingLabel(mode=Qt.TextElideMode.ElideRight) if elide_meta else QLabel()
         self.meta.setObjectName("rowMeta")
         self.text_col.addWidget(self.meta)
 

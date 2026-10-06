@@ -50,21 +50,24 @@ class _FedoraFamily(DistroRecipe):
         candidates = []
         for entry in data:
             link = entry.get("link", "")
-            if entry.get("arch") != "x86_64" or not link.endswith(".iso"):
+            raw_version = str(entry.get("version", ""))
+            if entry.get("arch") != "x86_64" or not link.endswith(".iso") or not raw_version.isdigit():
+                # Rawhide and branched pre-releases ("45 Beta") are not releases.
                 continue
             if str(entry.get("subvariant", "")).lower() != image.subvariant.lower():
                 continue
             if image.filename_part and image.filename_part not in link.rsplit("/", 1)[-1]:
-                continue
-            raw_version = str(entry.get("version", ""))
-            if not raw_version.isdigit():
-                # Skip Rawhide and branched pre-releases.
                 continue
             candidates.append((int(raw_version), entry))
 
         if not candidates:
             raise ScrapeError(self.name, f"release index lists no x86_64 {image.name} image")
 
+        # The newest release that built this image, even when that is not the
+        # newest Fedora: Sway and Budgie Atomic were left out of 45 Beta while
+        # Fedora still ships them, and their 44 images are current until they
+        # are rebuilt - the next one is offered as an update. One retired for
+        # good leaves the index when its last release reaches end of life.
         version, entry = max(candidates, key=lambda c: c[0])
         url = entry["link"]
         filename = url.split("/")[-1]
@@ -87,15 +90,18 @@ class FedoraRecipe(_FedoraFamily):
         "workstation": _Image("Workstation", "Workstation (GNOME)"),
         "kde": _Image("KDE", "KDE Plasma Desktop"),
         "server": _Image("Server", "Server (DVD)", "-dvd-"),
-        "server-netinst": _Image("Server", "Server (Network Install)", "-netinst-"),
+        "server-netinst": _Image("Server", "Server (Net Install)", "-netinst-"),
         "iot": _Image("IoT", "IoT"),
-        "everything": _Image("Everything", "Everything (Network Install)"),
+        "everything": _Image("Everything", "Everything (Net Install)"),
     }
 
 
 class FedoraAtomicRecipe(_FedoraFamily):
     key = "fedora_atomic"
     name = "Fedora Atomic Desktops"
+    # Fedora names these "Fedora Sway Atomic", "Fedora Xfce", "Fedora Astronomy":
+    # the catalog groups them, but an edition is not called by the group.
+    edition_prefix = "Fedora"
     description = "Image-based Fedora desktops: updated as a whole, rolled back as a whole."
 
     IMAGES = {
@@ -110,6 +116,9 @@ class FedoraAtomicRecipe(_FedoraFamily):
 class FedoraSpinsRecipe(_FedoraFamily):
     key = "fedora_spins"
     name = "Fedora Spins"
+    # Fedora names these "Fedora Sway Atomic", "Fedora Xfce", "Fedora Astronomy":
+    # the catalog groups them, but an edition is not called by the group.
+    edition_prefix = "Fedora"
     description = "Fedora with an alternative desktop environment."
 
     IMAGES = {
@@ -131,6 +140,9 @@ class FedoraSpinsRecipe(_FedoraFamily):
 class FedoraLabsRecipe(_FedoraFamily):
     key = "fedora_labs"
     name = "Fedora Labs"
+    # Fedora names these "Fedora Sway Atomic", "Fedora Xfce", "Fedora Astronomy":
+    # the catalog groups them, but an edition is not called by the group.
+    edition_prefix = "Fedora"
     description = "Fedora with a curated set of software for one purpose."
 
     IMAGES = {

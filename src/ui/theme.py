@@ -16,6 +16,26 @@ def _mix(base: str, over: str, amount: float) -> str:
     return "#" + "".join(f"{round(x + (y - x) * amount):02x}" for x, y in zip(a, b))
 
 
+def _contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio between two #rrggbb colours."""
+    def lum(c):
+        ch = [int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        ch = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in ch]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _readable(colour: str, surface: str, toward: str) -> str:
+    """`colour`, moved toward `toward` only as far as it takes to read on
+    `surface` at 4.5:1 - a light theme's green is too pale for a green wash."""
+    for amount in (0, 0.2, 0.4, 0.6, 0.8, 1):
+        candidate = _mix(colour, toward, amount)
+        if _contrast(candidate, surface) >= 4.5:
+            return candidate
+    return toward
+
+
 def _rgba(colour: str, alpha: int) -> str:
     """A #rrggbb colour at `alpha` (0-255), in stylesheet syntax."""
     r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
@@ -52,6 +72,13 @@ class ThemeColors:
     accent_fg: str = ""
     icon_chip: str = ""
     icon_plate: str = ""
+    # The drive map's block for images VEIM does not manage: a grey of its
+    # own, between "Other files" and an ISO whose logo has no hue.
+    unmanaged: str = ""
+    # The catalog's "Installed" mark: shaped like the Download button it
+    # stands in for, in the success colour instead of the accent.
+    success_soft: str = ""
+    success_fg: str = ""
 
     def __post_init__(self):
         self.bg_sidebar = self.bg_sidebar or self.bg_card
@@ -67,6 +94,10 @@ class ThemeColors:
         self.icon_plate = self.icon_plate or (
             "#e8edf4" if self.mode == "Dark" else self.icon_chip
         )
+        self.unmanaged = self.unmanaged or _mix(self.bg_main, self.text_muted, 0.8)
+        self.success_soft = self.success_soft or _mix(self.bg_main, self.success, 0.16)
+        self.success_fg = self.success_fg or _readable(
+            self.success, self.success_soft, self.text_primary)
 
 THEMES: Dict[str, ThemeColors] = {
     "Dark Modern": ThemeColors(
@@ -310,6 +341,12 @@ def generate_stylesheet(c: ThemeColors) -> str:
         selection-background-color: {c.accent};
         selection-color: {c.accent_text};
     }}
+    /* Pointing at the field says it takes input, as a combo box does,
+       before it has been clicked into. */
+    QLineEdit:hover {{
+        border-color: {c.border_focus};
+        background-color: {c.bg_card_hover};
+    }}
     QLineEdit:focus {{
         border: 1.5px solid {c.border_focus};
     }}
@@ -393,7 +430,9 @@ def generate_stylesheet(c: ThemeColors) -> str:
         color: {c.text_primary};
         border: 1px solid {c.border};
         border-radius: 8px;
-        padding: 6px 32px 6px 14px;
+        /* Little on the right: Qt sets the arrow's own 28px aside as well,
+           and 32px here reserved it twice - every box 30px past its text. */
+        padding: 6px 8px 6px 14px;
         font-size: 13px;
         font-weight: 500;
         min-height: 26px;
@@ -430,10 +469,20 @@ def generate_stylesheet(c: ThemeColors) -> str:
         padding: 6px 12px;
         border-radius: 6px;
     }}
+    /* Under the pointer: the accent's tint, which every theme sets apart
+       from the list's surface; the faint row shade did not read as a
+       response. The current choice keeps its accent text either way. */
+    QComboBox QAbstractItemView::item:hover {{
+        background-color: {c.accent_soft};
+        color: {c.text_primary};
+    }}
     QComboBox QAbstractItemView::item:selected {{
         background-color: {c.bg_card_hover};
         color: {c.accent};
         font-weight: 600;
+    }}
+    QComboBox QAbstractItemView::item:selected:hover {{
+        background-color: {c.accent_soft};
     }}
     QProgressBar {{
         background-color: {c.bg_input};
@@ -574,6 +623,10 @@ def _component_stylesheet(c: ThemeColors) -> str:
         background-color: {c.icon_chip};
         border: 1px solid {c.border};
         border-radius: 10px;
+        /* A file with no logo shows its type here instead. */
+        color: {c.text_muted};
+        font-size: 11px;
+        font-weight: 700;
     }}
     QLabel#iconChipPlate {{
         background-color: {c.icon_plate};
@@ -618,7 +671,10 @@ def _component_stylesheet(c: ThemeColors) -> str:
         background-color: transparent;
         color: {c.text_muted};
     }}
+    /* The surface every other row button gets, as well as the red: a colour
+       change alone read as text, not as something to press. */
     QPushButton#subtleDanger:hover {{
+        background-color: {c.bg_card_hover};
         color: {c.danger};
     }}
     QPushButton#quietDanger {{
@@ -632,6 +688,17 @@ def _component_stylesheet(c: ThemeColors) -> str:
     QPushButton#tonalBtn {{
         background-color: {c.accent_soft};
         color: {c.accent_fg};
+        font-weight: 700;
+    }}
+    /* The Download button's shape - radius, padding, type - in the success
+       colour: where the button would be, it says the edition is here. */
+    QLabel#installedBadge {{
+        background-color: {c.success_soft};
+        color: {c.success_fg};
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 7px 14px;
+        font-size: 12px;
         font-weight: 700;
     }}
     QPushButton#tonalBtn:hover {{
