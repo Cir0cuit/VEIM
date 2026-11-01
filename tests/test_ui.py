@@ -1857,14 +1857,26 @@ def test_the_flavor_list_answers_the_pointer_without_losing_the_choice(themed, q
     """Regression: the list looked inert - Fusion moved the selection, which
     marks the current edition, with the pointer, in a shade barely off the
     list's own. Hover is its own look now, and the choice stays marked."""
-    from PySide6.QtWidgets import QStyle
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
     from src.ui.components import FlavorCombo
     from src.ui.theme import generate_stylesheet
     combo = FlavorCombo()
-    view = combo.view()
-    assert combo.style().styleHint(QStyle.StyleHint.SH_ComboBox_ListMouseTracking) == 0
-    assert view.hasMouseTracking()
+    combo.addItems(["Desktop", "Server", "Netinst"])
+    combo.show()
+    listview, _ = _open(combo, qapp)
+    assert listview.hasMouseTracking()
+    chosen = listview.currentIndex().row()
+
+    point = QPointF(listview.visualRect(listview.model().index(2, 0)).center())
+    QApplication.sendEvent(listview.viewport(), QMouseEvent(
+        QEvent.Type.MouseMove, point, listview.viewport().mapToGlobal(point),
+        Qt.MouseButton.NoButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+
+    assert listview.currentIndex().row() == chosen, "the choice stays marked"
     assert "QAbstractItemView::item:hover" in generate_stylesheet(themed.current)
+    combo.hidePopup()
 
 
 def test_switching_to_an_installed_edition_does_not_move_the_selector(themed, qapp):

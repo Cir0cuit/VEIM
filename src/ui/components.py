@@ -7,10 +7,10 @@ from typing import Callable, Optional
 
 from PySide6.QtWidgets import (
     QWidget, QFrame, QLabel, QPushButton, QComboBox, QListView, QHBoxLayout,
-    QVBoxLayout, QMessageBox, QProxyStyle, QSizePolicy, QStyle, QLayout, QProgressBar,
+    QVBoxLayout, QMessageBox, QSizePolicy, QLayout, QProgressBar,
     QToolTip,
 )
-from PySide6.QtCore import Qt, QSize, QRect, QRectF, QPoint, QPointF
+from PySide6.QtCore import QEvent, QObject, Qt, QSize, QRect, QRectF, QPoint, QPointF
 from PySide6.QtGui import (
     QBrush, QColor, QCursor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPixmap
 )
@@ -72,31 +72,25 @@ def show_progress(bar: QProgressBar, meta: QLabel, task: DownloadTask,
     meta.setText("  ·  ".join(b for b in bits if b))
 
 
-class _PlainListPopup(QProxyStyle):
-    """Style that refuses a menu-style combo popup.
+class _NoSelectionOnHover(QObject):
+    """Keeps a combo popup's selection where it was while the pointer moves.
 
-    Qt's combo container always builds a scroller widget above and below the
-    list, which scroll the list on hover. Normally they stay hidden, but they
-    are what appears when the popup gets capped, and hover-scrolling is the
-    wrong interaction for a list of at most seven flavors.
+    Fusion moves the selection - which marks the edition chosen now - along
+    with the pointer, so the mark wandered off it and the hover was the
+    selection's faint shade. The hover gets its own look instead
+    (::item:hover, driven by hover events, which pass), and the current
+    edition keeps its mark.
 
-    Turning SH_ComboBox_Popup off makes the container omit them entirely rather
-    than merely hide them, so they cannot appear whatever the geometry. When
-    the popup will not fit below the combo, Qt repositions it instead -
-    verified by opening a seven-item list with 120px of screen below it, where
-    every entry stayed reachable with no scrollers and no scrollbar.
+    This used to be a QProxyStyle overriding styleHint(). PySide6 passes the
+    null arguments of every such call from C++ as None and drops a reference
+    to None each time; Qt asks style hints constantly, and on Python before
+    3.12, where None is not immortal, that ended the process with "Fatal
+    Python error: deallocating None" (it did in CI, on Linux).
     """
 
-    def styleHint(self, hint, option=None, widget=None, returnData=None):
-        if hint == QStyle.StyleHint.SH_ComboBox_Popup:
-            return 0
-        # Fusion moves the selection - which marks the edition chosen now -
-        # along with the pointer, so the mark wandered off it and the hover
-        # was the selection's faint shade. The hover gets its own look instead
-        # (::item:hover), and the current edition keeps its mark.
-        if hint == QStyle.StyleHint.SH_ComboBox_ListMouseTracking:
-            return 0
-        return super().styleHint(hint, option, widget, returnData)
+    def eventFilter(self, watched, event):
+        return (event.type() == QEvent.Type.MouseMove
+                and event.buttons() == Qt.MouseButton.NoButton)
 
 
 class FlavorCombo(QComboBox):
@@ -114,7 +108,9 @@ class FlavorCombo(QComboBox):
     Setting an explicit QListView also matters for looks rather than only for
     behaviour: the stylesheet's `QComboBox QAbstractItemView::item` rules do
     not reach the view Qt builds by default, so rows came out at the unstyled
-    25px instead of the 44px the padding asks for. See also _PlainListPopup.
+    25px instead of the 44px the padding asks for. The menu-style popup is
+    turned off (combobox-popup: 0), and _NoSelectionOnHover keeps the
+    selection still under the pointer.
 
     This is a plain QComboBox underneath, and deliberately so - but it is drawn
     by the stylesheet, not by the platform. A widget under a stylesheet is
@@ -124,13 +120,6 @@ class FlavorCombo(QComboBox):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # QProxyStyle(style) takes ownership of what it is given, and deleting
-        # the shared application style on teardown kills the process. With no
-        # argument it proxies that style without owning it. setStyle() does not
-        # take ownership either, hence the attribute.
-        self._popup_style = _PlainListPopup()
-        self.setStyle(self._popup_style)
-
         view = QListView()
         view.setFrameShape(QFrame.Shape.NoFrame)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -142,7 +131,18 @@ class FlavorCombo(QComboBox):
         view.setMouseTracking(True)
         view.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover)
         view.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        # A plain list, not a menu-style popup: Qt's container then builds no
+        # scrollers above and below the list, which scroll it on hover and
+        # appear when the popup gets capped - wrong for at most seven flavors.
+        # When the list will not fit below, Qt moves it instead. Set here, on
+        # the combo, because setView() builds the container now, before the
+        # window's stylesheet reaches this widget.
+        self.setStyleSheet("QComboBox { combobox-popup: 0; }")
         self.setView(view)
+        # After setView(): the container's own filter, which moves the
+        # selection, was installed there, and the newest filter runs first.
+        self._hover_filter = _NoSelectionOnHover(self)
+        view.viewport().installEventFilter(self._hover_filter)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
 
     def showPopup(self):
