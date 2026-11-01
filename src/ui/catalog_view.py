@@ -15,7 +15,7 @@ from PySide6.QtCore import Qt
 
 from src.core.downloader import DownloadTask
 from src.core.recipe_base import DistroRecipe, FlavorInfo
-from src.recipes.registry import registry
+from src.core.definitions import registry
 from src.ui.components import (
     Row, FlowLayout, FlavorCombo, make_button, EmptyState, restyle,
     set_button_kind, show_progress)
@@ -256,7 +256,7 @@ class CatalogView(QWidget):
 
         self._chip_group = QButtonGroup(self)
         self._chip_group.setExclusive(True)
-        for cat in registry.get_categories():
+        for cat in registry().get_categories():
             # Qt reads "&" in button text as a mnemonic marker.
             chip = QPushButton(cat.replace("&", "&&"))
             chip.setObjectName("filterChip")
@@ -292,7 +292,7 @@ class CatalogView(QWidget):
         root.addWidget(self.empty)
 
     def _populate(self):
-        recipes = sorted(registry.get_all_recipes(), key=lambda r: r.name.lower())
+        recipes = sorted(registry().get_all_recipes(), key=lambda r: r.name.lower())
         for recipe in recipes:
             row = CatalogRow(recipe, self.on_install, self.installed_lookup(recipe.key),
                              on_cancel=self.on_cancel)

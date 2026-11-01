@@ -267,6 +267,19 @@ big the file is, the row reads **N/A%** and counts the megabytes received. The o
 drive and bootable until the new file has fully arrived and been verified;
 only then is it swapped in and the old one removed.
 
+### When a project changes its download page
+
+How VEIM finds each project's current release - its *definitions* - is kept
+in a [repository of its own](https://github.com/Cir0cuit/VEIM-definitions),
+so a recipe a redesigned page has broken is fixed there rather than in a new
+VEIM. Every time VEIM starts it asks whether newer definitions have been
+published; when they have, it downloads them (about 60 KB), checks them
+against their published SHA-256, and uses them from then on. Nothing to
+install, nothing to click. Offline, or if a download cannot be used, VEIM
+carries on with the definitions it has - at worst the ones it was installed
+with. (Run from source, VEIM uses the `definitions/` checkout instead; see
+below.)
+
 ## ISOs you already have
 
 Already have ISOs on the drive? Outside `Managed_ISOs/`, VEIM doesn't take
@@ -390,7 +403,8 @@ is still there and the transfer resumes from it.
 just now — a mirror is down, or the page has changed. The ISO on your drive is
 fine to boot. Try again later; if it stays that way for days, the recipe
 probably needs updating for a redesigned page — please
-[open an issue](https://github.com/Cir0cuit/VEIM/issues).
+[open an issue](https://github.com/Cir0cuit/VEIM/issues). The fix arrives
+by itself the next time VEIM starts, with no new VEIM to install.
 
 **"Not enough space on drive."** The figure counts what the downloads
 already running still have to write, so a drive that looks half empty can be
@@ -461,13 +475,17 @@ Python 3.10 or newer. Use a virtual environment: most Linux distributions
 refuse a system-wide `pip install` ("externally-managed-environment").
 
 ```bash
-git clone https://github.com/Cir0cuit/VEIM
+git clone --recurse-submodules https://github.com/Cir0cuit/VEIM
 cd VEIM
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python main.py
 ```
+
+A source checkout runs the definitions in its `definitions/` submodule rather
+than downloading them. `git submodule update --remote definitions` brings them
+up to the latest.
 
 On Linux, Qt needs a few X11 libraries that some desktops leave out. Without
 them it stops with `Could not load the Qt platform plugin "xcb"`:

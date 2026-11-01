@@ -9,17 +9,17 @@ import pytest
 
 from src.core.branding import BRANDING_DIR
 from src.core.icons import ICON_URLS, BUNDLED_PREFIX
-from src.recipes.registry import registry
+from src.core.definitions import registry
 
 
 def test_every_recipe_has_an_icon():
-    keys = {r.key for r in registry.get_all_recipes()}
+    keys = {r.key for r in registry().get_all_recipes()}
     missing = sorted(keys - set(ICON_URLS))
     assert not missing, f"no icon configured for: {missing}"
 
 
 def test_no_orphan_icon_entries():
-    keys = {r.key for r in registry.get_all_recipes()}
+    keys = {r.key for r in registry().get_all_recipes()}
     orphans = sorted(set(ICON_URLS) - keys)
     assert not orphans, f"icon entries with no matching recipe: {orphans}"
 

@@ -1,28 +1,50 @@
 # Contributing
 
 ```bash
-git clone https://github.com/Cir0cuit/VEIM
+git clone --recurse-submodules https://github.com/Cir0cuit/VEIM
 cd VEIM
 pip install -e ".[dev]"
 
-pytest                  # 1500-odd tests, no network and no display needed
-pytest -m network       # also resolve all 225 editions against live mirrors
+pytest                  # the app: 550-odd tests, no network and no display needed
 ```
 
 The offline suite runs headless on Qt's `offscreen` platform, and is what CI
-runs on Linux, Windows and macOS across Python 3.10 and 3.12. Network tests are
-excluded by default — a mirror having a bad day should not fail your build. The
-Mirrors workflow (`.github/workflows/mirrors.yml`) runs them every Monday and can
-be started by hand; run them yourself when you suspect scraper rot: they fail
-with the distribution named. The
-live sweep also fails when a recipe reports a label ("latest", "current") in
-place of a version, when the filename a recipe would write is one that
-`iso_identity` reads back as a different entry, edition or version, and when a
-recipe reports an older release than [endoflife.date](https://endoflife.date)
-lists for the editions it covers (`pytest -m network -k oracle` runs just that
-check).
+runs on Linux, Windows and macOS across Python 3.10 and 3.12.
 
 Work happens on `dev`. `main` is what gets tagged and released.
+
+## Definitions
+
+The recipes - how VEIM finds each distribution's current release - the
+catalog and the filename rules are not in this repository. They are
+[VEIM-definitions](https://github.com/Cir0cuit/VEIM-definitions), checked out
+here as the `definitions/` submodule, and published from there as releases of
+their own: VEIM checks for a newer one at every start and downloads it
+(`src/core/definitions.py`). Fixing or adding a recipe is work in
+`definitions/`, pushed to that repository, and needs no VEIM release. Its
+[CONTRIBUTING.md](https://github.com/Cir0cuit/VEIM-definitions/blob/main/CONTRIBUTING.md)
+has the rules and its own suite, including the live sweep against every
+mirror, which its Mirrors workflow runs every Monday:
+
+```bash
+cd definitions
+pytest                  # every recipe against fixture pages
+pytest -m network       # every edition against its live mirror
+```
+
+What the two share is the contract in `src/core/recipe_base.py`:
+`DistroRecipe`, `DownloadInfo`, `FlavorInfo`, `ScrapeError`, `IsoIdentity` and
+the version helpers. Definitions declare the contract version they are written
+for (`API`, matched by `definitions.API` here) and the oldest VEIM they run in
+(`MIN_APP`); their CI tests every change against that VEIM and `main`. Adding
+to the contract means a VEIM release first and a raised `MIN_APP` after;
+changing it means a new `API` in both. The definitions may import only the
+standard library modules they list in `STDLIB`, which the frozen build bundles
+(`packaging/veim.spec`): an installed VEIM holds nothing else.
+
+A source checkout runs its own `definitions/` and downloads nothing, so an edit
+there is what runs. Run `python tools/readme_catalog.py --write` after moving
+the submodule forward: the README's catalog is generated from it.
 
 ## Layout
 
@@ -36,17 +58,15 @@ src/
 │   ├── downloader.py      resumable transfers, SHA-256, archives, rate metering
 │   ├── inventory.py       what is on the drive, reconciled against the filesystem;
 │   │                      adoption candidates and exclusions
-│   ├── iso_identity.py    which official download a filename is, if any
 │   ├── ventoy_config.py   ventoy.json aliases and the search root
-│   ├── recipe_base.py     DistroRecipe contract, DownloadInfo, ScrapeError, and
-│   │                      what recipes share: version_key, is_older, hrefs,
-│   │                      table_rows, sourceforge_rss, github_latest
+│   ├── recipe_base.py     the contract with the definitions: DistroRecipe,
+│   │                      DownloadInfo, FlavorInfo, ScrapeError, IsoIdentity,
+│   │                      version_key, is_older
+│   ├── definitions.py     the check for newer definitions, and loading them
 │   ├── icons.py           logo sources, and High-DPI caching of the shipped logos
 │   ├── app_update.py      whether a newer VEIM has been released
 │   ├── browser.py         opening a link without the bundle's environment
 │   └── logger.py
-├── recipes/               one module per distribution family
-│   └── registry.py        CATALOG: every recipe and its category
 ├── assets/
 │   ├── branding/          VEIM's own mark
 │   ├── fonts/             Atkinson Hyperlegible Next, and its licence
@@ -66,6 +86,8 @@ src/
     ├── update_button.py   the drive picker's "Check for VEIM Updates"
     ├── workspace.py       sidebar plus pages
     └── app.py             root window
+definitions/               the VEIM-definitions submodule: recipes, catalog,
+                           filename rules
 packaging/                 PyInstaller spec and the per-OS installer recipes
 tests/                     pytest suite
 tools/                     development scripts
@@ -78,59 +100,12 @@ Views never call `setStyleSheet` themselves. Every widget carries an
 
 ## Adding a distribution
 
-Subclass `DistroRecipe`, set `key`, `name`, `description` and `FLAVORS` (a
-list of `FlavorInfo(id, name)`) and implement `fetch_download_info()`, then add
-the class to `CATALOG` in `src/recipes/registry.py` with its category.
-
-`src/core/recipe_base.py` has what recipes share: `hrefs()` and `table_rows()`
-read a page, `version_key()` sorts versions, and `github_latest()` and
-`sourceforge_rss()` read those two release feeds. Use them rather than a local
-copy.
-
-`fetch_download_info()` must `raise ScrapeError(self.name, reason)` when it
-cannot determine a current release. Never return a hardcoded URL as a fallback;
-the suite checks for it. Supply `sha256` when the project publishes one.
-
-The version it reports is the one the user sees on the row and the one a later
-check is compared against, so it has to be the release itself, found fresh each
-time:
-
-- Read the release listing and take the newest by numeric sort — not the
-  first link on the page, not a folder pinned in the source.
-- Never report a label. "latest", "current" and "stable" are not versions,
-  and a row carrying one can never be told it is out of date.
-- On a network error, raise. Falling back to an older release that happened
-  to be reachable reports a stale version as current, which is worse than
-  no answer; "No current release" on the row is the honest outcome.
-- If the image's filename does not carry the version (Bazzite, Talos), rename
-  it on the way down so that it does.
-
-Then add a rule to `src/core/iso_identity.py` that reads that filename back
-into the same key, flavor id and version — exact pattern, whole name. That is
-what lets an ISO a user copied onto the drive be recognised and adopted, and
-`pytest -m network` fails when a recipe's filename and its rule disagree.
-Names that never change between releases get no rule on purpose.
-
-Then prove it picks the newest: add a `Case` for it to the matching
-`tests/test_freshness_<group>.py`. The harness in `tests/freshness.py` serves
-your fixture pages through a strict session - a URL the fixture lacks fails the
-test instead of answering 404 - and runs the recipe on every page reversed and
-shuffled, and again with the newest release's pages timing out, where it must
-raise rather than fall back. Its docstring lists what a fixture has to hold: an
-older release with working pages, a pre-release numbered above the newest, and
-a pair of versions that sort differently as text than as numbers. A recipe that
-only reads a pointer the project publishes (a GitHub "latest" release, a fixed
-`latest.iso`) goes in `EXEMPT` with the reason instead. `test_freshness_meta.py`
-fails until every catalog entry is in one or the other.
-
-Add an entry to `ICON_URLS` in `src/core/icons.py`, then run
-`python tools/fetch_icons.py` and commit the PNG it writes to
-`src/assets/icons/`. The app ships its logos rather than fetching them, and the
-suite fails if a distribution has none.
-
-Finally `python tools/readme_catalog.py --write`: the README's counts, category
-table and edition list are generated from the registry, and a test fails when
-they lag behind it.
+In `definitions/`: see its
+[CONTRIBUTING.md](https://github.com/Cir0cuit/VEIM-definitions/blob/main/CONTRIBUTING.md).
+What it needs from here is the logo: add an entry to `ICON_URLS` in
+`src/core/icons.py`, run `python tools/fetch_icons.py` and commit the PNG it
+writes to `src/assets/icons/`, so the next VEIM ships it. The suite fails if a
+catalog entry has none.
 
 ## Adding a theme
 
@@ -141,7 +116,10 @@ row invisible against its background.
 
 ## Releasing
 
-Bump `__version__` in `src/__init__.py` and `version` in `pyproject.toml`, then:
+Move the `definitions` submodule to the latest commit on its `main`
+(`git submodule update --remote definitions`): that is the copy a new install
+falls back on. Bump `__version__` in `src/__init__.py` and `version` in
+`pyproject.toml`, then:
 
 ```bash
 git tag v1.0.0

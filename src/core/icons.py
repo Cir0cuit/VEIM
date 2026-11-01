@@ -2,7 +2,7 @@ import os
 from typing import Dict, Optional, Tuple
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt
-from src.core import paths
+from src.core import definitions, paths
 from src.core.logger import log
 
 ICON_URLS = {
@@ -116,8 +116,15 @@ class IconManager:
         self._hue_cache: Dict[str, Optional[float]] = {}
 
     def _icon_path(self, key: str) -> Optional[str]:
-        """A copy in the icon cache wins; otherwise the one that ships with the app."""
-        for directory in (self.cache_dir, BUNDLED_ICON_DIR):
+        """A copy in the icon cache wins; otherwise the one that ships with the
+        app, and failing that one the definitions brought, for an entry added
+        since this VEIM was built. Only definitions already loaded are asked:
+        the logos are preloaded before the catalog is needed."""
+        directories = [self.cache_dir, BUNDLED_ICON_DIR]
+        current = definitions.loaded()
+        if current is not None:
+            directories.append(current.icon_dir)
+        for directory in directories:
             path = os.path.join(directory, f"{key}.png")
             if os.path.exists(path):
                 return path

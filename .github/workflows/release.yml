@@ -60,6 +60,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        # The definitions/ submodule, which the build bundles.
+        with:
+          submodules: true
 
       - uses: actions/setup-python@v7
         with:

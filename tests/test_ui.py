@@ -15,7 +15,7 @@ pytest.importorskip("PySide6")
 from src.core.downloader import DownloadTask
 from src.core.inventory import InventoryItem
 from src.ui.unmanaged_row import UnmanagedRow
-from src.recipes.registry import registry
+from src.core.definitions import registry
 
 
 @pytest.fixture(autouse=True)
@@ -216,7 +216,7 @@ def test_is_older(latest, installed, older):
 def test_catalog_lists_every_recipe(themed):
     from src.ui.catalog_view import CatalogView
     view = CatalogView(on_install=lambda r, f: None)
-    assert len(view.rows) == len(registry.get_all_recipes())
+    assert len(view.rows) == len(registry().get_all_recipes())
 
 
 def test_catalog_search_filters(themed):
@@ -246,7 +246,7 @@ def test_catalog_category_filter(themed):
 
     view._set_category("Rescue & Diagnostics")
     visible = {k for k, r in view.rows.items() if not r.isHidden()}
-    expected = {r.key for r in registry.get_all_recipes() if r.category == "Rescue & Diagnostics"}
+    expected = {r.key for r in registry().get_all_recipes() if r.category == "Rescue & Diagnostics"}
     assert visible == expected
 
 
@@ -1108,7 +1108,7 @@ def test_subtitle_stops_counting_an_update_once_it_is_underway(installed, qapp):
     lib._on_check_slot("debian::netinst", "13.1.0", "")
     assert "1 update available" in lib.subtitle.text()
 
-    lib._on_catalog_install_request(registry.get_recipe("arch"), "standard")
+    lib._on_catalog_install_request(registry().get_recipe("arch"), "standard")
     qapp.processEvents()
     assert lib.cards["arch::standard"].is_downloading
     assert "update" not in lib.subtitle.text()
@@ -1952,13 +1952,13 @@ def test_rows_follow_the_catalogs_name_for_their_edition(workspace, qapp, tmp_pa
 ])
 def test_editions_are_named_without_repeating_themselves(key, flavor, name):
     from src.ui.dashboard import catalog_name
-    assert catalog_name(registry.get_recipe(key), flavor) == name
+    assert catalog_name(registry().get_recipe(key), flavor) == name
 
 
 def test_a_fresh_download_is_named_as_its_row_will_be(workspace, qapp):
     """Regression: the card read "Ubuntu (Ubuntu Desktop)"."""
     lib = workspace.library
-    lib._on_catalog_install_request(registry.get_recipe("ubuntu"), "desktop")
+    lib._on_catalog_install_request(registry().get_recipe("ubuntu"), "desktop")
     qapp.processEvents()
     assert lib.download_cards["ubuntu::desktop"].title.fullText() == "Ubuntu Desktop"
 

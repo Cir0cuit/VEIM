@@ -18,7 +18,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from src.recipes.registry import registry, CATEGORY_ORDER  # noqa: E402
+from src.core import definitions  # noqa: E402
 
 README = os.path.join(BASE_DIR, "README.md")
 START, END = "<!-- catalog:start -->", "<!-- catalog:end -->"
@@ -26,14 +26,14 @@ COUNTS = re.compile(r"· \d+ distributions and tools · \d+ editions")
 
 
 def counts() -> str:
-    recipes = registry.get_all_recipes()
+    recipes = definitions.registry().get_all_recipes()
     editions = sum(len(r.get_flavors()) for r in recipes)
     return f"· {len(recipes)} distributions and tools · {editions} editions"
 
 
 def _by_category():
-    recipes = registry.get_all_recipes()
-    for category in CATEGORY_ORDER:
+    recipes = definitions.registry().get_all_recipes()
+    for category in definitions.get().category_order:
         members = [r for r in recipes if r.category == category]
         yield category, sorted(members, key=lambda r: r.name.lower())
 

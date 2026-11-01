@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 from src.ui.app import VEIMMainWindow
 from src.core.branding import app_icon, claim_taskbar_identity, load_fonts
 from src import __version__
+from src.core import definitions
 from src.core.logger import log
 
 # What Qt's xcb platform plugin loads beyond libxcb itself, and what stock
@@ -46,6 +47,9 @@ def missing_xcb_libraries(env=os.environ, platform=sys.platform, load=ctypes.CDL
 
 
 def main():
+    # First: the check for newer definitions then has the whole of startup,
+    # and the time spent choosing a drive, to finish in.
+    definitions.start()
     log.info(f"Starting VEIM {__version__}")
     missing = missing_xcb_libraries()
     if missing:

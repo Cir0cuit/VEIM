@@ -5,7 +5,7 @@ with rows nothing could update and, worse, filed a customised image as the
 official release and offered to "update" - overwrite - it.
 
 Now nothing is adopted unasked. Only an ISO named exactly like an official
-download is even a candidate (see core/iso_identity), and each candidate gets
+download is even a candidate (see the definitions' iso_identity), and each candidate gets
 an answer here: adopt it, leave it alone for good, or decide another time.
 """
 from typing import Dict, List

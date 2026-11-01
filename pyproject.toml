@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "veim"
-version = "1.2.0"
+version = "1.3.0"
 description = "Ventoy Easy ISO Manager - manage Linux distributions and rescue tools on a Ventoy USB drive"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,7 +40,7 @@ Homepage = "https://github.com/Cir0cuit/VEIM"
 Issues = "https://github.com/Cir0cuit/VEIM/issues"
 
 [tool.setuptools]
-packages = ["src", "src.core", "src.recipes", "src.ui"]
+packages = ["src", "src.core", "src.ui"]
 py-modules = ["main"]
 
 [tool.setuptools.package-data]

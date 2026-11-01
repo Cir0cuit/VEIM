@@ -1,37 +1,15 @@
+"""The contract between VEIM and its definitions.
+
+The recipes that find each distribution's current release live in a separate
+repository (Cir0cuit/VEIM-definitions) and are updated without a VEIM release;
+see src/core/definitions.py. What they hand back, and what they raise, is
+defined here, because the app reads it: these names are API version
+definitions.API, and changing one is a change to that version.
+"""
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from html.parser import HTMLParser
 from typing import List
-import re
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
-from src.core.logger import log
-
-# A server error is a hiccup, not an answer. Two more tries, a second or two
-# apart, cover the kind cdimage.debian.org has; then it is refused.
-SERVER_ERROR_STATUSES = (500, 502, 503, 504)
-SERVER_ERROR_RETRIES = 2
-SERVER_ERROR_BACKOFF = 1.0
-
-BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
-
-# The path of each file a SourceForge RSS feed lists, newest first.
-SOURCEFORGE_PATHS = r'<title><!\[CDATA\[(/[^\]]+)\]\]></title>'
-
-
-def _refuse_server_errors(response, *args, **kwargs):
-    """Session hook: a 5xx that survived the retries is raised, never parsed.
-
-    The body of an error page holds no download links, and a recipe that
-    searched it reported "no current release" for a release that was there.
-    """
-    if response.status_code >= 500:
-        raise requests.HTTPError(
-            f"{response.url.split('//', 1)[-1].split('/', 1)[0]} answered "
-            f"HTTP {response.status_code}", response=response)
-    return response
 
 
 class ScrapeError(Exception):
@@ -99,149 +77,35 @@ def is_older(candidate: str, installed: str) -> bool:
     return bool(ours) and bool(theirs) and theirs < ours
 
 
-class _Page(HTMLParser):
-    """The href of every link on a page, and the text in each table row's cells."""
-
-    def __init__(self):
-        super().__init__()
-        self.hrefs, self.rows, self._in_cell = [], [], False
-
-    def handle_starttag(self, tag, attrs):
-        href = dict(attrs).get("href")
-        if tag == "a" and href is not None:
-            self.hrefs.append(href)
-        elif tag == "tr":
-            self.rows.append([])
-            self._in_cell = False
-        elif tag == "td" and self.rows:
-            self.rows[-1].append("")
-            self._in_cell = True
-
-    def handle_endtag(self, tag):
-        if tag in ("td", "tr"):
-            self._in_cell = False
-
-    def handle_data(self, data):
-        if self._in_cell:
-            self.rows[-1][-1] += data
-
-
-def _parse(html: str) -> _Page:
-    page = _Page()
-    page.feed(html)
-    page.close()
-    return page
-
-
-def hrefs(html: str) -> List[str]:
-    """Every link's href, in page order, with entities decoded."""
-    return _parse(html).hrefs
-
-
-def table_rows(html: str) -> List[List[str]]:
-    """The stripped text of each table row's cells."""
-    return [[cell.strip() for cell in row] for row in _parse(html).rows]
-
-
-def sourceforge_rss(session, project: str, query: str) -> str:
-    """A SourceForge project's RSS feed of its newest files, newest first."""
-    r = session.get(f"https://sourceforge.net/projects/{project}/rss?{query}",
-                    timeout=25, headers={"User-Agent": "curl/8.4.0"})
-    r.raise_for_status()
-    return r.text
-
-
-def sha256_in(sums: str, filename: str) -> str:
-    """The SHA-256 a checksum list gives `filename`, or "".
-
-    Lists name the file bare, with a "*", or under a folder ("./name",
-    "v8.10/name"), in the GNU layout ("<hash>  name") or the BSD one
-    ("SHA256 (name) = <hash>"). A file that holds a single hash and nothing
-    else is that hash. Only 64 hex digits count, so a SHA-512 beside it in
-    the same list is never taken for it.
-    """
-    name = r'(?:\S*/)?' + re.escape(filename)
-    m = re.search(rf'(?m)^(?:([0-9a-fA-F]{{64}})[ \t]+\*?{name}|SHA256 \({name}\) ?= ?([0-9a-fA-F]{{64}}))\s*$',
-                  sums)
-    if not m:
-        m = re.fullmatch(r'\s*([0-9a-fA-F]{64})\s*', sums)
-    return next(g for g in m.groups() if g).lower() if m else ""
-
-
-def published_sha256(session, url: str, filename: str, who: str, headers: dict = None) -> str:
-    """The SHA-256 the checksum file at `url` gives `filename`.
-
-    "" when that cannot be had - unreadable, not a 200, or not naming the
-    file. The release is known either way; only the check after download is
-    lost, so a checksum is never a reason to refuse one.
-    """
-    try:
-        r = session.get(url, timeout=20, headers=headers)
-        if r.status_code != 200:
-            raise requests.HTTPError(f"HTTP {r.status_code}")
-    except Exception as e:
-        log.warning(f"[{who}] No checksum for {filename} at {url}: {e}")
-        return ""
-    sha256 = sha256_in(r.text, filename)
-    if not sha256:
-        log.warning(f"[{who}] {url} gives no SHA-256 for {filename}")
-    return sha256
-
-
 @dataclass
 class FlavorInfo:
     id: str
     name: str
+
+
+
+@dataclass(frozen=True)
+class IsoIdentity:
+    """What a filename says an image is: the definitions' iso_identity rules
+    produce these, and the inventory matches them against recipes."""
+    key: str            # recipe key
+    flavor_id: str
+    version: str        # in the form the recipe's DownloadInfo reports it
+
 
 class DistroRecipe(ABC):
     """
     Abstract base recipe for Linux distributions and bootable utilities.
 
     A recipe declares its key, name, description and FLAVORS; the registry
-    gives it its category.
+    gives it its category. Recipes themselves live in the definitions
+    (veim_definitions.common adds the page-reading helpers on top of this).
     """
     key: str
     name: str
     description: str
     FLAVORS: List[FlavorInfo] = []
     category = ""
-
-    def get_session(self) -> requests.Session:
-        """A session for reading release pages.
-
-        A server error is retried, then refused: cdimage.debian.org answers
-        500 for a request or two at a time, and a recipe that parsed the
-        error page as a listing reported "no current release" for a release
-        that was there. A 4xx still comes back as a response - a 404 is an
-        answer several recipes read ("that release has no images yet").
-        """
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": BROWSER_UA,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.7",
-            "DNT": "1",
-            "Upgrade-Insecure-Requests": "1"
-        })
-        adapter = HTTPAdapter(max_retries=Retry(
-            total=SERVER_ERROR_RETRIES, status_forcelist=SERVER_ERROR_STATUSES,
-            allowed_methods=("GET", "HEAD"), backoff_factor=SERVER_ERROR_BACKOFF,
-            raise_on_status=False))
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-        session.hooks["response"].append(_refuse_server_errors)
-        return session
-
-    def github_latest(self, repo: str):
-        """(tag, assets) of a GitHub project's latest release."""
-        try:
-            r = self.get_session().get(f"https://api.github.com/repos/{repo}/releases/latest", timeout=15)
-            r.raise_for_status()
-            data = r.json()
-        except Exception as e:
-            log.warning(f"[{self.name}] GitHub API error: {e}")
-            raise ScrapeError(self.name, f"could not read the {self.name} release feed ({e})")
-        return str(data.get("tag_name", "")), data.get("assets", [])
 
     def get_flavors(self) -> List[FlavorInfo]:
         """Return list of supported flavors/variants for this distro."""

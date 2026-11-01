@@ -19,7 +19,7 @@ from PySide6.QtGui import QGuiApplication
 
 from src.core.inventory import InventoryManager, InventoryItem, Tidied, UnmanagedImage
 from src.core.drive import DriveDetector
-from src.recipes.registry import registry
+from src.core.definitions import registry
 from src.core.recipe_base import DistroRecipe, ScrapeError
 from src.core.downloader import DownloadTask, free_for_download, probe_size, reserved_bytes
 from src.core.logger import log
@@ -253,7 +253,7 @@ class DashboardView(QWidget):
     def _display_name(self, candidate: UnmanagedImage) -> str:
         """Named the way a download of the same thing would be."""
         found = candidate.identity
-        recipe = registry.get_recipe(found.key)
+        recipe = registry().get_recipe(found.key)
         return catalog_name(recipe, found.flavor_id) if recipe else candidate.filename
 
     def _adoptable(self, include_excluded: bool = False) -> List[UnmanagedImage]:
@@ -261,7 +261,7 @@ class DashboardView(QWidget):
         enough if the recipe no longer offers that flavor."""
         out = []
         for candidate in self.inventory_mgr.find_candidates(include_excluded):
-            recipe = registry.get_recipe(candidate.identity.key)
+            recipe = registry().get_recipe(candidate.identity.key)
             if recipe and any(f.id == candidate.identity.flavor_id for f in recipe.get_flavors()):
                 out.append(candidate)
         return out
@@ -429,7 +429,7 @@ class DashboardView(QWidget):
         name is not enough if the recipe no longer offers that flavor."""
         if image.identity is None:
             return False
-        recipe = registry.get_recipe(image.identity.key)
+        recipe = registry().get_recipe(image.identity.key)
         return bool(recipe) and any(f.id == image.identity.flavor_id
                                     for f in recipe.get_flavors())
 
@@ -443,7 +443,7 @@ class DashboardView(QWidget):
         """
         changed = False
         for item in self.inventory_mgr.items.values():
-            recipe = registry.get_recipe(item.key)
+            recipe = registry().get_recipe(item.key)
             if recipe is None or item.flavor_id not in {f.id for f in recipe.get_flavors()}:
                 continue        # an edition the catalog no longer has keeps its name
             name = catalog_name(recipe, item.flavor_id)
@@ -855,7 +855,7 @@ class DashboardView(QWidget):
     def _handle_single_check(self, item: InventoryItem, card: DistroCard):
         ck = self._key_of(card)
         self._refresh_subtitle()
-        recipe = registry.get_recipe(item.key)
+        recipe = registry().get_recipe(item.key)
         if not recipe:
             self._on_check_slot(ck, "Unknown", "")
             return
@@ -889,7 +889,7 @@ class DashboardView(QWidget):
         self._sync_check_all()
 
     def _handle_single_download(self, item: InventoryItem, card: DistroCard):
-        recipe = registry.get_recipe(item.key)
+        recipe = registry().get_recipe(item.key)
         if recipe:
             self._on_catalog_install_request(recipe, item.flavor_id, ck=self._key_of(card))
 

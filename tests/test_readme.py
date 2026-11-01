@@ -26,7 +26,7 @@ def test_counts_line_matches_the_registry(readme):
 
 
 def test_every_registered_entry_is_listed(readme):
-    for recipe in readme_catalog.registry.get_all_recipes():
+    for recipe in readme_catalog.definitions.registry().get_all_recipes():
         assert f"- **{recipe.name}** — " in readme
         for flavor in recipe.get_flavors():
             assert flavor.name in readme, f"{recipe.name}: {flavor.name}"

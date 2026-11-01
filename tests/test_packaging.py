@@ -70,14 +70,26 @@ def test_spec_bundles_the_assets_the_app_reads_at_runtime():
     assert "branding" in spec
 
 
+def test_spec_bundles_the_definitions_and_what_they_import():
+    """Without the bundled copy an offline first start has no catalog, and
+    without the modules definitions may import, no download can load."""
+    spec = read(PACKAGING, "veim.spec")
+    assert "definitions_files()" in spec and "definitions_version_file()" in spec
+    assert "hiddenimports=hiddenimports" in spec
+    assert "*definitions_stdlib()" in spec
+    namespace = {}
+    exec(read(ROOT, "definitions", "veim_definitions", "__init__.py"), namespace)
+    assert "html.parser" in namespace["STDLIB"], "the allowlist the spec reads is there"
+
+
 def test_every_distribution_ships_a_logo():
     """Fetching these on first run left rows blank until fifty requests
     finished, and blank for good without a network."""
     from src.core.icons import ICON_URLS
-    from src.recipes.registry import registry
+    from src.core.definitions import registry
 
     icon_dir = os.path.join(ROOT, "src", "assets", "icons")
-    for recipe in registry.get_all_recipes():
+    for recipe in registry().get_all_recipes():
         assert recipe.key in ICON_URLS, f"{recipe.name} has no ICON_URLS entry"
         path = os.path.join(icon_dir, f"{recipe.key}.png")
         assert os.path.exists(path), \
@@ -99,13 +111,13 @@ def test_logos_resolve_without_a_writable_cache(tmp_path, qapp):
     """The frozen app's cache directory starts empty; the shipped set has to
     carry it until, and if, anything is ever downloaded."""
     from src.core.icons import IconManager
-    from src.recipes.registry import registry
+    from src.core.definitions import registry
 
     manager = IconManager()
     manager.cache_dir = str(tmp_path)          # a fresh install's empty cache
     manager.pixmap_cache.clear()
 
-    for recipe in registry.get_all_recipes():
+    for recipe in registry().get_all_recipes():
         assert manager._icon_path(recipe.key), f"no logo resolves for {recipe.name}"
         assert manager.get_pixmap(recipe.key) is not None, \
             f"{recipe.name} renders no pixmap"

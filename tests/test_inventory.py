@@ -10,7 +10,7 @@ import os
 import pytest
 
 from src.core.inventory import InventoryItem, InventoryManager, UnmanagedImage
-from src.core.iso_identity import identify
+from src.core.definitions import identify
 from src.core.ventoy_config import VentoyConfig
 
 
@@ -823,3 +823,87 @@ def test_a_recipe_writing_versions_differently_offers_no_update_to_the_same_file
     item = InventoryManager(drive_root).items["elementary::stable"]
 
     assert item.version == identify(fname).version != "8.1"
+
+
+# ------------------------------------------------- definitions older than the drive's
+
+NEWER_DEFS = "2026.09.01.120000"
+OLDER_DEFS = "2026.06.01.120000"
+
+
+@pytest.fixture
+def definitions_at(monkeypatch):
+    """Pretend the definitions in use are of a given version."""
+    from dataclasses import replace
+    from src.core import definitions
+
+    def use(version):
+        monkeypatch.setattr(definitions, "_loaded", replace(definitions.get(), version=version))
+    return use
+
+
+def _recorded_definitions(managed_dir):
+    with open(os.path.join(managed_dir, "veim_inventory.json"), encoding="utf-8") as fh:
+        return json.load(fh).get("_definitions")
+
+
+def test_the_inventory_records_the_definitions_that_sorted_the_drive(
+        drive_root, managed_dir, make_iso, definitions_at):
+    definitions_at(NEWER_DEFS)
+    inv = InventoryManager(drive_root)
+    inv.add_or_update("arch", "standard", "Arch Linux", "2026.09.01",
+                      make_iso("archlinux-2026.09.01-x86_64.iso"), url="https://example.invalid/a.iso")
+
+    assert _recorded_definitions(managed_dir) == NEWER_DEFS
+
+
+def test_older_definitions_let_go_of_nothing_newer_ones_took_in(
+        drive_root, managed_dir, make_iso, definitions_at):
+    """A VEIM on older definitions - its bundled copy, a withdrawn release,
+    another computer - may not recognise what newer ones adopted. It must not
+    take that for something to drop, nor move anything out of Managed_ISOs."""
+    definitions_at(NEWER_DEFS)
+    inv = InventoryManager(drive_root)
+    # Adopted, not downloaded: only a rule in the newer definitions knew it.
+    inv.add_or_update("newdistro", "standard", "New Distro", "1.0",
+                      make_iso("newdistro-1.0-amd64.iso"))
+    make_iso("custom.iso")
+
+    definitions_at(OLDER_DEFS)
+    older = InventoryManager(drive_root)
+
+    assert "newdistro::standard" in older.items
+    assert older.tidy_managed(_names_for_catalog, now=_LATER) == []
+    assert sorted(os.listdir(managed_dir)) == ["custom.iso", "newdistro-1.0-amd64.iso",
+                                               "veim_inventory.json"]
+    older.save()
+    assert _recorded_definitions(managed_dir) == NEWER_DEFS, "never lowered"
+
+
+def test_definitions_that_catch_up_sort_the_drive_again(
+        drive_root, managed_dir, make_iso, definitions_at):
+    definitions_at(OLDER_DEFS)
+    inv = InventoryManager(drive_root)
+    inv.add_or_update("arch", "standard", "Arch Linux", "2026.09.01",
+                      make_iso("archlinux-2026.09.01-x86_64.iso"), url="https://example.invalid/a.iso")
+    make_iso("custom.iso")
+
+    definitions_at(NEWER_DEFS)
+    done = InventoryManager(drive_root).tidy_managed(_names_for_catalog, now=_LATER)
+
+    assert [(d.name, d.outcome) for d in done] == [("custom.iso", "moved")]
+
+
+def test_older_definitions_keep_a_record_they_file_under_another_key(
+        drive_root, managed_dir, make_iso, definitions_at):
+    """Newer definitions moved an edition to a new key; older ones still read
+    the file as the old key. The record stays as the newer ones filed it."""
+    definitions_at(NEWER_DEFS)
+    inv = InventoryManager(drive_root)
+    fname = make_iso("debian-13.4.0-amd64-netinst.iso")
+    inv.add_or_update("debian_netinst", "standard", "Debian Netinst", "13.4.0", fname)
+
+    definitions_at(OLDER_DEFS)
+    older = InventoryManager(drive_root)
+
+    assert older.items["debian_netinst::standard"].filename == fname

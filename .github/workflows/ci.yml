@@ -17,6 +17,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        # The definitions/ submodule, which the tests load.
+        with:
+          submodules: true
 
       - uses: actions/setup-python@v7
         with:

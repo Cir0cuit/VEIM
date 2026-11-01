@@ -4,7 +4,9 @@ import stat
 import time
 from dataclasses import asdict, dataclass, replace
 from typing import Callable, Dict, List, Optional, Any, Set, Tuple
-from src.core.iso_identity import IsoIdentity, identify
+from src.core import definitions
+from src.core.definitions import identify
+from src.core.recipe_base import IsoIdentity, version_key
 from src.core.logger import log
 from src.core.ventoy_config import VentoyConfig, is_bootable
 
@@ -35,17 +37,14 @@ def _is_trash(dirname: str) -> bool:
     return (dirname.startswith(".trash-") or dirname == ".Trashes"
             or dirname.startswith("$RECYCLE.BIN"))
 
-# Catalog entries that were split after inventories had been written with the
-# old key: (key, flavor) as recorded -> the key that flavor lives under now.
-MOVED_FLAVORS = {
-    ("fedora", "cinnamon"): "fedora_spins",
-    ("fedora", "xfce"): "fedora_spins",
-    ("fedora", "budgie"): "fedora_spins",
-}
-
 # Reserved entry in the inventory file. Every other entry is a record, and a
 # reader that predates this one skips anything that is not a dict.
 EXCLUDED_KEY = "_excluded"
+# Reserved too: the newest definitions that have sorted this drive. Older ones
+# - a VEIM falling back to its bundled copy, a rolled-back release, another
+# computer - may not recognise what newer ones adopted, and must not take that
+# for something to drop from the inventory and move out of Managed_ISOs.
+DEFINITIONS_KEY = "_definitions"
 
 
 @dataclass(eq=False)
@@ -155,6 +154,8 @@ class InventoryManager:
         # The inventory is there but could not be read: nothing is known about
         # what VEIM manages, so nothing may be moved, adopted or written.
         self.unreadable = False
+        # The definitions that last sorted the drive, when newer than ours.
+        self.sorted_by = ""
         self.load()
         # VEIM up to 1.1.2 confined Ventoy to Managed_ISOs, which hid every other
         # image on the drive. Undo that at once, not at the next download.
@@ -179,20 +180,21 @@ class InventoryManager:
         self.items = {}
         self.excluded = set()
         self.unreadable = False
+        self.sorted_by = ""
         if not os.path.exists(self.inventory_file):
             return
         try:
             with open(self.inventory_file, "r", encoding="utf-8") as f:
                 raw = json.load(f)
+            if isinstance(raw.get(EXCLUDED_KEY), list):
+                self.excluded = {str(name) for name in raw[EXCLUDED_KEY]}
+            # Before any record: whether one may be let go depends on it.
+            self.sorted_by = str(raw.get(DEFINITIONS_KEY, ""))
             for k, val in raw.items():
-                if k == EXCLUDED_KEY:
-                    if isinstance(val, list):
-                        self.excluded = {str(name) for name in val}
-                    continue
-                if not isinstance(val, dict):
+                if k in (EXCLUDED_KEY, DEFINITIONS_KEY) or not isinstance(val, dict):
                     continue
                 item = InventoryItem.from_dict(val)
-                item.key = MOVED_FLAVORS.get((item.key, item.flavor_id), item.key)
+                item.key = definitions.get().moved_flavors.get((item.key, item.flavor_id), item.key)
                 full_path = os.path.join(self.managed_dir, item.filename)
                 if not os.path.exists(full_path):
                     log.info(f"ISO {item.filename} no longer exists on disk, skipping.")
@@ -209,8 +211,17 @@ class InventoryManager:
             self.items, self.excluded, self.unreadable = {}, set(), True
             log.error(f"Error loading inventory from {self.inventory_file}: {e}")
 
-    @staticmethod
-    def _still_trackable(item: InventoryItem) -> bool:
+    @property
+    def behind(self) -> bool:
+        """Whether the definitions in use are older than ones that have
+        already sorted this drive. Until they catch up, nothing VEIM has taken
+        in is let go: what they do not recognise may be what they predate."""
+        ours = definitions.get().version
+        return (definitions.VERSION_PATTERN.fullmatch(self.sorted_by) is not None
+                and definitions.VERSION_PATTERN.fullmatch(ours) is not None
+                and version_key(ours) < version_key(self.sorted_by))
+
+    def _still_trackable(self, item: InventoryItem) -> bool:
         """Re-examine a record that was taken in from the drive, not downloaded.
 
         Older versions adopted every ISO they found and guessed what it was
@@ -230,6 +241,8 @@ class InventoryManager:
                 item.version = found.version
             return True
         found = identify(item.filename)
+        if (found is None or found.key != item.key) and self.behind:
+            return True             # as newer definitions knew it; left as it is
         if found is None or found.key != item.key:
             return False
         # The guess often had the right distro but a placeholder version
@@ -247,6 +260,11 @@ class InventoryManager:
             data: Dict[str, Any] = {k: item.to_dict() for k, item in self.items.items()}
             if self.excluded:
                 data[EXCLUDED_KEY] = sorted(self.excluded)
+            ours = definitions.get().version
+            if definitions.VERSION_PATTERN.fullmatch(ours) and not self.behind:
+                data[DEFINITIONS_KEY] = ours
+            elif self.sorted_by:
+                data[DEFINITIONS_KEY] = self.sorted_by
             # Swapped in whole, so a stick pulled mid-write keeps the old one.
             tmp = self.inventory_file + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -360,7 +378,7 @@ class InventoryManager:
 
         Nothing is taken in from here on its own account: a candidate is only
         ever adopted because the user picked it. An image that identify() does
-        not recognise is not a candidate at all - see iso_identity.
+        not recognise is not a candidate at all - see the definitions' iso_identity.
         """
         return [i for i in self.unmanaged_images()
                 if i.identity is not None and (include_excluded or not i.excluded)]
@@ -587,6 +605,11 @@ class InventoryManager:
                 done.append(Tidied(rel, "adopted", display_name))
                 tracked.add(name.lower())
 
+        if self.behind:
+            log.info(f"Definitions {definitions.get().version} are older than the "
+                     f"{self.sorted_by} that last sorted this drive: moving nothing out "
+                     "of Managed_ISOs")
+            return done
         tracked = {item.filename.lower() for item in self.items.values()}
         try:
             entries = sorted(os.listdir(self.managed_dir), key=str.lower)
